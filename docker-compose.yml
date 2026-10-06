@@ -1,0 +1,17 @@
+# Project name follows APP_NAME from .env, so renaming the app renames the stack.
+name: ${APP_NAME:-trading-bot}
+
+services:
+  app:
+    build: .
+    env_file: .env
+    # Phase 1 exits after its startup checks. Switch to `unless-stopped` once the
+    # trading loop exists (phase 6).
+    restart: "no"
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # reach a Postgres running on the host (local dev)
+    volumes:
+      - ./logs:/app/logs
+
+# No database service on purpose: PostgreSQL is external (a local container in
+# development, a managed service in production). Point DATABASE_URL at it.
