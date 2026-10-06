@@ -1,0 +1,34 @@
+[project]
+name = "trading-bot"
+version = "0.1.0"
+description = "Automated Binance spot trader with OCO exits and a capital-gains ledger"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "pydantic-settings>=2.2",
+    "python-binance>=1.0.19",
+    "sqlalchemy[asyncio]>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["bot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
