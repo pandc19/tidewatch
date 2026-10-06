@@ -1,8 +1,4 @@
-"""Schema rules, checked against the real (migrated) PostgreSQL.
-
-Every test runs inside a transaction that is rolled back, so the database stays
-empty. Skipped when no database is reachable at DATABASE_URL.
-"""
+"""Schema rules, checked against the real (migrated) PostgreSQL (see conftest.py)."""
 
 import uuid
 from datetime import UTC, datetime
@@ -11,10 +7,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.config.settings import get_settings
-from bot.database.connection import Database
 from bot.database.models import (
     BotState,
     CancelReason,
@@ -27,23 +20,6 @@ from bot.database.models import (
 )
 
 D = Decimal
-
-
-@pytest.fixture
-async def session():
-    db = Database.from_settings(get_settings())
-    try:
-        await db.ping()
-    except Exception as exc:  # noqa: BLE001  any failure to connect means skip, not fail
-        await db.dispose()
-        pytest.skip(f"PostgreSQL not reachable: {exc!r}")
-    async with db.engine.connect() as conn:
-        outer = await conn.begin()
-        s = AsyncSession(bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False)
-        yield s
-        await s.close()
-        await outer.rollback()
-    await db.dispose()
 
 
 def position(symbol="SOLUSDT", status=PositionStatus.PENDING_ENTRY) -> Position:
