@@ -56,9 +56,13 @@ These match the `DATABASE_URL` in `.env.example`. Change both together if you pi
 ## 5. Verify
 
 ```bash
-.venv/bin/pytest                # 59 tests; the schema tests need the database
+.venv/bin/pytest                # 133 tests; schema and reconciliation tests need the database
 .venv/bin/python -m bot.main    # logs "database reachable", then exits (phase 1)
 ```
+
+## 6. Binance testnet keys (optional until phase 3)
+
+Public data (filters, prices) needs no keys, so steps 1-5 work without them. To exercise signed calls and the account stream, create testnet keys at https://testnet.binance.vision and put them in `.env` (`BINANCE_API_KEY`, `BINANCE_API_SECRET`). An ordinary HMAC key works for the account stream on the testnet (checked 2026-10-06), even though Binance's docs mention Ed25519. If your account ever refuses it, create an Ed25519 key and set `BINANCE_PRIVATE_KEY_PATH`. With keys set, `python -m bot.main` also logs your fee rate and balance and reconciles stored orders. Keep `DRY_RUN=true`: no order is sent either way.
 
 ## Running in Docker
 

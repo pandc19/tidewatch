@@ -2,7 +2,7 @@
 
 Automated Binance spot trader. It scans a list of USDT pairs, places one limit buy, protects the fill with an OCO exit (take-profit + stop-loss), and records every closed trade in a capital-gains ledger. Built for a small account (about $16 to start), one position at a time.
 
-> **Status: phase 1 of 6 (foundation).** Settings, database schema and migrations, and the Binance precision module exist and are tested. The exchange client, trading engine, scanner, risk manager, notifications and tax export are planned, not built. `python -m bot.main` currently only checks configuration and database connectivity.
+> **Status: phase 2 of 6 (exchange layer).** Settings, database schema and migrations, the precision module, the Binance REST client, the account stream and order reconciliation exist and are tested against a fake exchange and live public endpoints. Not yet exercised with API keys (signed calls and the live account stream are unverified). The trading engine, scanner, risk manager, notifications and tax export are planned. `python -m bot.main` runs startup checks and exits.
 
 The app name is a setting (`APP_NAME`), so the project can be renamed later without touching code.
 
@@ -30,7 +30,11 @@ bot/
 ├── database/
 │   ├── connection.py     Async PostgreSQL pool
 │   └── models.py         ORM schema (positions, orders, tax_ledger, daily_pnl, ...)
-├── services/             binance_client, scanner, risk_manager, notifications  (planned)
+├── services/
+│   ├── binance_client.py     REST wrapper: filters, orders, OCO, fills (dry-run safe)
+│   ├── user_stream.py        Account stream with reconnect
+│   ├── reconciliation.py     Sync stored orders with Binance, label cancel reasons
+│   └── scanner, risk_manager, notifications                       (planned)
 ├── engine/               state_machine                                          (planned)
 ├── reports/              tax_exporter                                           (planned)
 └── main.py               Entrypoint

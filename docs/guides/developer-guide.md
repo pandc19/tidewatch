@@ -17,7 +17,8 @@
 3. **Percentages are fractions** (`0.04` = 4%) everywhere: env vars, settings, columns.
 4. **Nothing is hardcoded that the owner may tune**: it is a setting in [settings.py](../../bot/config/settings.py) and a line in `.env.example`.
 5. **The app name only lives in `APP_NAME`, `pyproject.toml` and the compose project name.** Don't write it into code, queries or messages; read `settings.app_name`.
-6. **Dry-run must never reach Binance's order endpoints.** Check `settings.dry_run` at the lowest layer that sends an order, not in callers.
+6. **Dry-run must never reach Binance's order endpoints.** It is enforced inside `ExchangeClient`, the only module that talks to Binance. Don't call the python-binance client from anywhere else.
+   Likewise every order is filter-validated there; don't add a second path that skips it.
 7. **Never log or print secrets.** Keys are `SecretStr`.
 
 ## Changing the schema
@@ -29,8 +30,9 @@
 
 ## Tests
 
-- Unit tests (`test_precision.py`, `test_settings.py`) need nothing.
-- Schema tests run against the real migrated PostgreSQL inside a transaction that is rolled back, and skip if no database is reachable.
+- Unit tests (`test_precision.py`, `test_settings.py`, `test_binance_client.py`, `test_user_stream.py`) need nothing.
+- `tests/fakes.py` has `FakeBinance`, a stand-in for python-binance's client that returns Binance-shaped dicts and records every call, so tests can assert what was (or was not) sent. Add new endpoints there, copying real response shapes.
+- Schema and reconciliation tests run against the real migrated PostgreSQL inside a transaction that is rolled back (`tests/conftest.py`), and skip if no database is reachable.
 - Fixtures for Binance filters mirror live `exchangeInfo` responses. When adding one, copy a real response instead of inventing values.
 
 ## Adding things
@@ -41,4 +43,10 @@
 
 ## Facts checked vs assumed
 
-Checked against Binance's live public API (2026-10-06): filter names and shapes (`PRICE_FILTER`, `LOT_SIZE`, `NOTIONAL`, `PERCENT_PRICE_BY_SIDE`) on mainnet and testnet, OCO allowed on the candidate pairs, $5 minimum notional. **Assumed, not verified:** the account's fee rate (0.1% per side), the user-data stream method. See [NEXT_STEPS.md](../../NEXT_STEPS.md).
+**Checked live (2026-10-06, public endpoints, no keys):** filter names and shapes on mainnet and testnet, OCO allowed and $5 minimum notional on the candidate pairs, order book spreads, and the full dry-run path (size, round, validate) against live filters and average price. **Checked in Binance's docs and python-binance's source:** the listenKey stream was removed on 2026-02-20; python-binance 1.0.37 subscribes with `userDataStream.subscribe.signature`; the `orderList/oco` parameter names.
+
+**Checked on the testnet with HMAC keys (2026-10-06):** balance, open orders, fee rates from `/api/v3/account`; the account stream opens with an HMAC key (a wrong secret gets no response); placing, cancelling and filling a limit buy with the real `executionReport` events (bare events with `s`, `i`, `c`, `C`, `x`, `X`, `g`; a cancel carries the original id in `C`; `listStatus` and `outboundAccountPosition` also arrive); fills and fees are visible immediately after a fill; OCO placement; cancelling one OCO leg cancels both and Binance replies with the whole list; a take-profit already below the market is refused with code -2010. **Not verified** (see [NEXT_STEPS.md](../../NEXT_STEPS.md)): an OCO leg filling, real fee amounts (testnet rates read 0), partial fills, the stream dropping mid-trade.
+
+**Order placement errors:** `OrderRejected` (with `.code`) means Binance refused the order and nothing exists. Any other `ExchangeError` (timeout, clock error) leaves the outcome unknown: reconcile by client order id before retrying, or you may buy twice.
+
+**Don't use python-binance's `/sapi` helpers** (`get_trade_fee`, margin, wallet, ...): the library has no testnet routing for them, so with `testnet=True` they send your key to the real exchange. `ExchangeClient.account_fees()` uses `/api/v3/account` instead, and a test fails if `get_trade_fee` is ever called.

@@ -31,5 +31,6 @@ docs/
     ├── README.md
     ├── 001-decimal-and-exchange-filters.md
     ├── 002-positions-and-order-schema.md
-    └── 003-safe-defaults-and-single-position.md
+    ├── 003-safe-defaults-and-single-position.md
+    └── 004-stream-is-notification-rest-is-truth.md
 ```

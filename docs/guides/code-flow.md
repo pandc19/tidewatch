@@ -4,17 +4,19 @@ How one trade moves through the system, and why each step is shaped the way it i
 
 ## 0. Startup (built)
 
-`python -m bot.main` → `get_settings()` → `Database.from_settings()` → `ping()`.
+`python -m bot.main` → settings → database ping → `ExchangeClient.create()` → every pair in `SYMBOLS` is checked against Binance's live filters (tradable, OCO allowed) → with API keys: fee and balance lookup, then `reconcile()`. A bad pair or a reconciliation problem stops startup with exit code 1.
 
 - **Settings** ([bot/config/settings.py](../../bot/config/settings.py)) are read once into an immutable object. Invalid values (allocation over 100%, a symbol that doesn't end in the quote asset, a zero stop-loss) stop the process at startup instead of mid-trade.
 - **Database** ([bot/database/connection.py](../../bot/database/connection.py)) hands out sessions that commit on success and roll back on any error. `pool_pre_ping` lets it survive a Postgres restart.
 - **Migrations** run before the app (`alembic upgrade head`), so code never meets an old schema.
 
-Planned: load symbol filters from Binance, reconcile with the exchange, open the WebSocket.
+## 1. Exchange layer (built, phase 2)
 
-## 1. Reconcile **(planned, phase 2)**
+[binance_client.py](../../bot/services/binance_client.py) is the only module that talks to Binance REST. It returns small `Decimal` dataclasses (`ExchangeOrder`, `Fill`, `BookTicker`, ...), never raw dicts. Two rules live here so nothing can bypass them: every order is validated against the symbol's filters first, and `dry_run` returns a synthetic order instead of calling an order endpoint. Public market data needs no keys; signed calls raise a clear error without them. A refused order raises `OrderRejected` (Binance said no; nothing exists); any other failure leaves the outcome unknown and must be reconciled by client order id.
 
-On start and after every WebSocket reconnect, compare our open `orders` with Binance's REST view and apply any fill we missed. *Why:* a WebSocket only reports events while connected. Without this, a fill during a restart would leave a position unprotected.
+[user_stream.py](../../bot/services/user_stream.py) listens to the account stream, and [reconciliation.py](../../bot/services/reconciliation.py) brings the `orders` table in line with Binance. The stream is only a *notification* ("order X changed"); the order and its fills are re-read over REST, so a lost or odd event cannot corrupt state. After every (re)connect, and at startup, a full `reconcile()` closes any gap. It records status, fills, fees and the cancel reason, and reports failures and unknown orders; it never decides anything. Why: [ADR-004](../adr/004-stream-is-notification-rest-is-truth.md).
+
+**Cancel reasons.** An order found cancelled with no reason is labelled `EXTERNAL`; the engine passes its own reason (`ENTRY_TIMEOUT`, `KILL_SWITCH`) when it cancels on purpose; the losing leg of an OCO pair becomes `OCO_COUNTERPART_FILLED`, whichever leg syncs first.
 
 ## 2. Scan and size an entry **(planned, phase 4)**
 
@@ -32,7 +34,7 @@ The user-data stream reports the fill. The position becomes `OPEN`, and the bot 
 
 ## 5. Timeout rotation **(planned, phase 3)**
 
-A buy not filled by `expires_at` is cancelled with `cancel_reason = ENTRY_TIMEOUT`, the position becomes `CANCELLED`, and the scan runs again. A *partly* filled buy keeps what filled: the remainder is cancelled and the filled part gets its OCO.
+A buy not filled by `expires_at` is cancelled (the engine passes `ENTRY_TIMEOUT` to `sync_order`), the position becomes `CANCELLED`, and the scan runs again. A *partly* filled buy keeps what filled: the remainder is cancelled and the filled part gets its OCO.
 
 ## 6. Close and record **(planned, phase 3 and 5)**
 
