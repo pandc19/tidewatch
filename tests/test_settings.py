@@ -140,3 +140,29 @@ def test_database_password_is_not_printed():
     s = make(DATABASE_URL="postgres://u:hunter2-secret@h/db")
     assert "hunter2-secret" not in repr(s)
     assert "hunter2-secret" not in str(s)
+
+
+# --- exchange settings --------------------------------------------------------------------
+
+
+def test_blank_private_key_path_means_not_set(monkeypatch):
+    monkeypatch.setenv("BINANCE_PRIVATE_KEY_PATH", "")
+    assert make().binance_private_key_path is None
+
+
+def test_credentials_need_key_and_secret_or_key_and_key_file():
+    assert make().has_binance_credentials is False
+    assert make(BINANCE_API_KEY="k").has_binance_credentials is False  # secret missing
+    assert make(BINANCE_API_KEY="k", BINANCE_API_SECRET="s").has_binance_credentials is True
+    # Ed25519: the key file replaces the secret
+    ed = make(BINANCE_API_KEY="k", BINANCE_PRIVATE_KEY_PATH="/keys/ed25519.pem")
+    assert ed.has_binance_credentials is True
+    assert make(BINANCE_PRIVATE_KEY_PATH="/keys/ed25519.pem").has_binance_credentials is False
+
+
+def test_order_id_prefix_is_defaulted_and_validated():
+    assert make().order_id_prefix == "bot"
+    assert make(ORDER_ID_PREFIX="tb2").order_id_prefix == "tb2"
+    for bad in ("", "has-dash", "x" * 13, "sp ace"):
+        with pytest.raises(ValidationError):
+            make(ORDER_ID_PREFIX=bad)

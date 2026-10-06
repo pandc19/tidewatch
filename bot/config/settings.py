@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -49,8 +50,14 @@ class Settings(BaseSettings):
     # Binance. Testnet and dry-run default to ON so a fresh checkout cannot trade real money.
     binance_api_key: SecretStr = SecretStr("")
     binance_api_secret: SecretStr = SecretStr("")
+    # Path to an Ed25519 private key (PEM). Binance's current user-data stream needs
+    # Ed25519 signing; leave empty to use the HMAC key/secret pair above.
+    binance_private_key_path: Path | None = None
     binance_testnet: bool = True
     dry_run: bool = True
+    # Prefix of every client order id the bot creates. Fixed on purpose (not the app name):
+    # it is how orders are recognised after a restart, so it must not change with a rename.
+    order_id_prefix: str = Field(default="bot", pattern=r"^[A-Za-z0-9]{1,12}$")
 
     # Database: just a connection string (local container or a managed service).
     # Provider URLs (postgres://..., ?sslmode=require) are accepted and converted for asyncpg.
@@ -86,6 +93,11 @@ class Settings(BaseSettings):
     def _normalize_database_url(cls, value: SecretStr) -> SecretStr:
         return SecretStr(normalize_database_url(value.get_secret_value()))
 
+    @field_validator("binance_private_key_path", mode="before")
+    @classmethod
+    def _blank_key_path_is_none(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
     @field_validator("symbols", mode="before")
     @classmethod
     def _split_symbols(cls, value: object) -> object:
@@ -116,12 +128,19 @@ class Settings(BaseSettings):
     def telegram_enabled(self) -> bool:
         return bool(self.telegram_bot_token.get_secret_value() and self.telegram_chat_id)
 
+    @property
+    def has_binance_credentials(self) -> bool:
+        has_key = bool(self.binance_api_key.get_secret_value())
+        if self.binance_private_key_path is not None:  # Ed25519: key id + private key file
+            return has_key
+        return has_key and bool(self.binance_api_secret.get_secret_value())
+
     def require_binance_credentials(self) -> None:
         """Fail fast at startup instead of on the first signed request."""
-        if not (
-            self.binance_api_key.get_secret_value() and self.binance_api_secret.get_secret_value()
-        ):
-            raise RuntimeError("BINANCE_API_KEY and BINANCE_API_SECRET must be set")
+        if not self.has_binance_credentials:
+            raise RuntimeError(
+                "BINANCE_API_KEY and BINANCE_API_SECRET (or BINANCE_PRIVATE_KEY_PATH) must be set"
+            )
 
 
 @lru_cache
