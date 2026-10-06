@@ -9,9 +9,23 @@ Local setup from a fresh clone. About five minutes.
 
 ## 1. Install
 
+Creates `.venv` and installs the dependencies, including the dev tools. Python 3.12 is used to match the Docker image (not the system 3.14, which is untested here).
+
+**With uv** (recommended; install it with `brew install uv`):
+
 ```bash
 uv sync --python 3.12
 ```
+
+**Without uv** (needs Python 3.11+ and pip 25.1+):
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -e . --group dev
+```
+
+Either way, run tools as `.venv/bin/pytest`, `.venv/bin/alembic`, and so on. You can also `source .venv/bin/activate` once per terminal and drop the `.venv/bin/` prefix; inside the venv `python` and `python3` are the same interpreter.
 
 ## 2. Configure
 
