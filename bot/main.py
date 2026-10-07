@@ -1,10 +1,10 @@
 """Entrypoint: `python -m bot.main [--check-only]`.
 
 Startup checks (configuration, database, every configured pair against Binance's live
-filters, account lookups), then the engine runs until Ctrl+C or SIGTERM. With
-`--check-only` it also reconciles stored orders with the exchange and exits.
+filters, account lookups, strategy sanity), then the engine runs until Ctrl+C or SIGTERM.
+With `--check-only` it also reconciles stored orders with the exchange and exits.
 
-Until the scanner exists (phase 4) the engine opens no new positions: it manages and
+With API keys the scanner supplies entries; without them the engine only manages and
 recovers whatever is already in the database.
 """
 
@@ -19,9 +19,11 @@ import sys
 from bot.config.settings import Settings, get_settings
 from bot.database.connection import Database
 from bot.engine.runner import EngineRunner
-from bot.engine.state_machine import TradingEngine
+from bot.engine.state_machine import EntrySource, NoEntries, TradingEngine
 from bot.services.binance_client import ExchangeClient, ExchangeError
 from bot.services.reconciliation import reconcile
+from bot.services.risk_manager import config_problems
+from bot.services.scanner import Scanner
 
 log = logging.getLogger("bot")
 
@@ -56,10 +58,13 @@ async def run(check_only: bool) -> int:
                 raise ExchangeError(f"{symbol} does not allow OCO orders")
         log.info("all %d pairs are tradable and allow OCO", len(settings.symbols))
 
+        free_quote = None
         if settings.has_binance_credentials:
-            await _account_checks(settings, exchange)
+            free_quote = await _account_checks(settings, exchange)
         else:
             log.warning("no API keys: skipping account checks")
+        if not await _config_checks(settings, exchange, free_quote):
+            return 1
 
         if check_only:
             return await _check_reconciliation(settings, db, exchange)
@@ -91,25 +96,56 @@ async def _check_reconciliation(settings: Settings, db: Database, exchange: Exch
     return 0
 
 
+async def _config_checks(settings: Settings, exchange: ExchangeClient, free_quote) -> bool:
+    """Refuse to start on a strategy that cannot work (for example a profit target under the fees)."""
+    filters = {s: await exchange.symbol_filters(s) for s in settings.symbols}
+    prices = {s: (await exchange.book_ticker(s)).ask for s in settings.symbols}
+    errors, warnings = config_problems(settings, filters, prices, free_quote)
+    for message in warnings:
+        log.warning("config: %s", message)
+    for message in errors:
+        log.error("config: %s", message)
+    return not errors
+
+
 async def _run_engine(settings: Settings, db: Database, exchange: ExchangeClient) -> int:
-    engine = TradingEngine(settings=settings, exchange=exchange, session_factory=db.session)
+    source: EntrySource
+    if settings.has_binance_credentials:
+        source = Scanner(settings, exchange)
+        log.info(
+            "scanning %s every %ss on %s candles (RSI<=%s then an EMA(%s) cross-up)%s",
+            ",".join(settings.symbols), settings.scan_every_seconds, settings.scan_interval,
+            settings.rsi_oversold, settings.ema_period,
+            " [DRY RUN: entries are recorded, never sent]" if settings.dry_run else "",
+        )
+    else:
+        source = NoEntries()
+        log.warning("no API keys: nothing to scan with, managing existing positions only")
+    engine = TradingEngine(
+        settings=settings, exchange=exchange, session_factory=db.session, entry_source=source
+    )
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
-    log.info("no entry source yet (phase 4): managing existing positions only")
     await EngineRunner(engine, exchange, settings).run(stop)
     return 0
 
 
-async def _account_checks(settings: Settings, exchange: ExchangeClient) -> None:
-    """Informational: a failure here is logged, not fatal (these endpoints differ on testnet)."""
+async def _account_checks(settings: Settings, exchange: ExchangeClient):
+    """Logs the fee rate and balance and returns the free quote balance (None if the lookup failed).
+
+    A failure here is logged, not fatal: these endpoints can differ on the testnet.
+    """
     try:
         fee = await exchange.account_fees()
         log.info("account fee rate: maker=%s taker=%s", fee.maker, fee.taker)
-        log.info("free %s: %s", settings.quote_asset, await exchange.free_balance(settings.quote_asset))
+        free = await exchange.free_balance(settings.quote_asset)
+        log.info("free %s: %s", settings.quote_asset, free)
+        return free
     except Exception as exc:  # noqa: BLE001
         log.warning("account lookup failed: %s", exc)
+        return None
 
 
 def main() -> None:
