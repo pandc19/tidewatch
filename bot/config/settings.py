@@ -101,6 +101,8 @@ class Settings(BaseSettings):
     exit_retry_seconds: int = Field(default=120, ge=1)
 
     # Notifications
+    # While a position has no stop-loss, repeat the alert this often (0 = alert once only).
+    unprotected_reminder_minutes: int = Field(default=15, ge=0)
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
 
