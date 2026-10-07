@@ -74,6 +74,12 @@ class Recorder(EngineObserver):
     async def kill_switch(self, event):
         self.events.append(("kill_switch", event.realized_loss_usd))
 
+    async def reminder(self, message):
+        self.events.append(("reminder", message))
+
+    async def protected_again(self, position):
+        self.events.append(("protected_again", position.symbol))
+
     def kinds(self):
         return [e[0] for e in self.events]
 
@@ -552,6 +558,81 @@ async def test_trade_history_is_not_even_fetched_while_the_exits_are_live(h):
     await h.engine.tick()
     await h.engine.tick()
     assert [c for c in h.fake.called("get_my_trades") if "limit" in c] == []  # only per-order fill lookups
+
+
+# --- reminders while unprotected -----------------------------------------------------------
+
+
+async def test_an_unprotected_position_is_reminded_at_the_interval_and_not_before(h):
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+    assert h.obs.kinds().count("attention") == 1 and "reminder" not in h.obs.kinds()
+
+    h.clock.advance(minutes=14)
+    await h.engine.tick()
+    assert "reminder" not in h.obs.kinds()  # not yet
+
+    h.clock.advance(minutes=1, seconds=1)
+    await h.engine.tick()
+    (first,) = [e[1] for e in h.obs.events if e[0] == "reminder"]
+    assert "Still unprotected after 15 min" in first and "no stop-loss" in first
+
+    h.clock.advance(minutes=15)
+    await h.engine.tick()
+    assert h.obs.kinds().count("reminder") == 2  # and again, one interval later
+    assert h.obs.kinds().count("attention") == 1  # the original alert is not repeated
+
+
+async def test_reminders_can_be_switched_off(session):
+    h = build(session, UNPROTECTED_REMINDER_MINUTES="0")
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+    h.clock.advance(hours=3)
+    await h.engine.tick()
+    assert h.obs.kinds().count("attention") == 1 and "reminder" not in h.obs.kinds()
+
+
+async def test_a_protected_position_is_never_reminded_about(h):
+    await h.open_and_fill()
+    h.clock.advance(hours=2)
+    await h.engine.tick()
+    assert "reminder" not in h.obs.kinds() and "protected_again" not in h.obs.kinds()
+
+
+async def test_reminders_continue_through_the_retry_throttle_and_stop_when_protection_returns(h):
+    h.fake.raise_on["create_oco_order"] = api_error(-2010, "The relationship of the prices for the orders is not correct.")
+    await h.open_and_fill()
+    assert h.obs.kinds().count("attention") == 1
+
+    h.clock.advance(minutes=16)  # the exit retry is throttled to 2 minutes, but the reminder is due
+    await h.engine.tick()
+    assert h.obs.kinds().count("reminder") == 1
+
+    h.fake.raise_on.clear()
+    h.clock.advance(seconds=121)  # past the retry throttle
+    await h.engine.tick()  # the next retry succeeds: protection is back
+    assert h.obs.kinds().count("protected_again") == 1
+    h.clock.advance(minutes=30)
+    await h.engine.tick()
+    assert h.obs.kinds().count("reminder") == 1  # no more once protected
+
+
+async def test_a_second_reason_for_being_unprotected_is_announced_on_its_own(h):
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+    h.fake.manual_sell("0.05", "123.00")  # then sells part of it by hand
+    await h.engine.tick()
+    assert h.obs.kinds().count("attention") == 2  # cancelled exits, then the partial sale
+
+
+async def test_closing_by_hand_ends_the_reminders(h):
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+    h.fake.manual_sell("0.129", "123.00")
+    await h.engine.tick()
+    h.clock.advance(hours=1)
+    await h.engine.tick()
+    assert "reminder" not in h.obs.kinds() and "trade_closed" in h.obs.kinds()
 
 
 # --- the kill-switch inside the engine ----------------------------------------------------

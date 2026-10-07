@@ -121,6 +121,18 @@ class EngineObserver:
     async def trade_closed(self, position: Position, result: TradeResult) -> None: ...
     async def attention(self, message: str) -> None: ...
     async def kill_switch(self, event: KillSwitchEvent) -> None: ...
+    async def reminder(self, message: str) -> None: ...
+    async def protected_again(self, position: Position) -> None: ...
+
+
+@dataclass
+class _Unprotected:
+    """A position that is holding coins with no stop-loss, and when we last told the owner."""
+
+    since: datetime
+    last_notice: datetime
+    message: str
+    kinds: set
 
 
 def _utcnow() -> datetime:
@@ -147,6 +159,7 @@ class TradingEngine:
         self._lock = asyncio.Lock()
         self._attention_keys: set[str] = set()
         self._last_exit_attempt: dict = {}
+        self._unprotected: dict = {}
         # The hard circuit breaker. It runs inside the tick, which already holds the lock, so it
         # is given the lock-free cancel.
         self._kill_switch = KillSwitch(
@@ -373,25 +386,33 @@ class TradingEngine:
     async def _evaluate_open(self, position_id) -> None:
         async with self._sessions() as session:
             position = await self._load(session, position_id)
+            symbol, held = position.symbol, position.quantity
             sells = [o for o in position.orders if o.side == OrderSide.SELL]
             filled = next((o for o in sells if o.status == OrderStatus.FILLED), None)
             live = [o for o in sells if o.status in LIVE]
             all_rejected = bool(sells) and all(o.status == OrderStatus.REJECTED for o in sells)
         if filled is not None:
+            self._unprotected.pop(position_id, None)
             await self._close(position_id, filled.id)
-        elif live:
             return
-        elif await self._detect_manual_sale(position_id):
+        if live:
+            await self._clear_unprotected(position_id)  # protected (again): say so if we had warned
+            return
+        if await self._detect_manual_sale(position_id):
+            self._unprotected.pop(position_id, None)
             return  # the owner sold it by hand: the position is now closed
-        elif not sells or all_rejected:
+        if not sells or all_rejected:
             await self._place_exit(position_id)  # never placed, or refused last time: try again
         else:
-            # Exits exist but none is live or filled: cancelled outside the bot. Do not
-            # fight a deliberate manual cancel by re-placing it; flag it for the owner.
-            await self._attention_once(
-                f"{position_id}:exits-cancelled",
-                f"position {position_id} is OPEN but its exit orders were cancelled outside the bot",
+            # Exits exist but none is live or filled: cancelled outside the bot. Do not fight a
+            # deliberate manual cancel by re-placing it; tell the owner, and keep reminding them.
+            await self._flag_unprotected(
+                position_id,
+                "exits-cancelled",
+                f"{symbol}: your sell orders were cancelled outside the bot. "
+                f"You still hold {held} {symbol} with no stop-loss.",
             )
+        await self._remind_unprotected(position_id)
 
     async def _detect_manual_sale(self, position_id) -> bool:
         """True if the owner sold this position by hand, in which case it has been closed.
@@ -417,10 +438,11 @@ class TradingEngine:
         if sold <= 0:
             return False
         if sold < held - filters.step_size:
-            await self._attention_once(
-                f"{position_id}:partial-manual-sale",
+            await self._flag_unprotected(
+                position_id,
+                "partial-manual-sale",
                 f"{symbol}: you sold {sold} of the {held} the bot holds. Partial manual sales are not "
-                "handled automatically; sell or protect the rest yourself",
+                "handled automatically: the rest has no stop-loss, so sell or protect it yourself.",
             )
             return False
 
@@ -481,10 +503,11 @@ class TradingEngine:
         filters = await self._exchange.symbol_filters(symbol)
         quantity = await self._exit_quantity(held, filters)
         if quantity < filters.min_qty:
-            await self._attention_once(
-                f"{position_id}:nothing-to-sell",
-                f"position {position_id} ({symbol}) is OPEN but there is nothing to sell "
-                f"(the free balance covers only {quantity}); check your balance",
+            await self._flag_unprotected(
+                position_id,
+                "nothing-to-sell",
+                f"{symbol}: the bot holds a position but the free balance covers only {quantity}, "
+                "so no stop-loss can be placed. Check your balance.",
             )
             return
         take_profit = filters.round_price(entry * (1 + tp_pct))
@@ -578,6 +601,7 @@ class TradingEngine:
         await self._observer.exit_placed(
             await self._get_position(position_id), await self._get_order(tp_id), await self._get_order(sl_id)
         )
+        await self._clear_unprotected(position_id)
 
     async def _update_exit_prices(self, tp_id, sl_id, take_profit, stop, stop_limit) -> None:
         async with self._sessions() as session:
@@ -605,9 +629,12 @@ class TradingEngine:
                 order = await session.get(Order, oid)
                 order.status = OrderStatus.REJECTED
                 order.cancel_detail = detail
-        await self._attention_once(
-            f"{position_id}:exit-refused:{detail[:40]}",
-            f"position {position_id} is OPEN and UNPROTECTED: exit refused ({detail}). Retrying each tick",
+            symbol, quantity = order.symbol, order.quantity
+        await self._flag_unprotected(
+            position_id,
+            "exit-refused",
+            f"{symbol}: Binance refused the sell orders ({detail}). You hold {quantity} with no stop-loss. "
+            f"Retrying every {self._settings.exit_retry_seconds}s.",
         )
 
     # ------------------------------------------------------------------------------ close
@@ -797,6 +824,37 @@ class TradingEngine:
                 await session.scalars(select(Order).where(Order.client_order_id == event.client_order_id))
             ).first()
         return order
+
+    async def _flag_unprotected(self, position_id, kind: str, message: str) -> None:
+        """Tell the owner the first time each *kind* of problem appears; later ticks only remind.
+
+        A position can be unprotected for several reasons in turn (exits cancelled, then a
+        partial manual sale); each new reason is announced once, and reminders carry the latest.
+        """
+        now = self._clock()
+        state = self._unprotected.get(position_id)
+        if state is None:
+            state = self._unprotected[position_id] = _Unprotected(now, now, message, set())
+        state.message = message
+        if kind not in state.kinds:
+            state.kinds.add(kind)
+            state.last_notice = now
+            await self._notify_attention(message)
+
+    async def _remind_unprotected(self, position_id) -> None:
+        state = self._unprotected.get(position_id)
+        minutes = self._settings.unprotected_reminder_minutes
+        now = self._clock()
+        if state is None or minutes == 0 or now - state.last_notice < timedelta(minutes=minutes):
+            return
+        state.last_notice = now
+        waited = int((now - state.since).total_seconds() // 60)
+        log.critical("STILL UNPROTECTED after %d min: %s", waited, state.message)
+        await self._observer.reminder(f"Still unprotected after {waited} min. {state.message}")
+
+    async def _clear_unprotected(self, position_id) -> None:
+        if self._unprotected.pop(position_id, None) is not None:
+            await self._observer.protected_again(await self._get_position(position_id))
 
     async def _attention_once(self, key: str, message: str) -> None:
         if key in self._attention_keys:
