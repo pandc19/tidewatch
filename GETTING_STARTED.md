@@ -56,7 +56,7 @@ These match the `DATABASE_URL` in `.env.example`. Change both together if you pi
 ## 5. Verify
 
 ```bash
-.venv/bin/pytest                # 257 tests; schema and reconciliation tests need the database
+.venv/bin/pytest                # 274 tests; schema and reconciliation tests need the database
 .venv/bin/python -m bot.main --check-only    # startup checks, then exits
 .venv/bin/python -m bot.main                 # startup checks, then the engine runs until Ctrl+C
 ```
@@ -75,6 +75,15 @@ docker compose run --rm \
 ```
 
 The container applies migrations, then starts the bot. Compose never starts a database: PostgreSQL is always external, and `DATABASE_URL` is all the app needs. For production see [docs/deployment.md](docs/deployment.md).
+
+## Export your trades
+
+```bash
+.venv/bin/python -m bot.reports.tax_exporter --year 2026     # writes exports/tax_ledger_2026.csv
+.venv/bin/python -m bot.reports.tax_exporter                 # every trade
+```
+
+One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and how it ended. The tax year is the UTC year of the *sale*; USDT is treated as USD. This is a record of trades, not tax advice. Ask an accountant how your country wants it reported.
 
 ## Common problems
 

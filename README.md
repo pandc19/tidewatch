@@ -2,7 +2,7 @@
 
 Automated Binance spot trader. It scans a list of USDT pairs, places one limit buy, protects the fill with an OCO exit (take-profit + stop-loss), and records every closed trade in a capital-gains ledger. Built for a small account (about $16 to start), one position at a time.
 
-> **Status: phase 4 of 6 (risk and scanner).** The Binance client, account stream, reconciliation, trading engine, entry scanner (RSI + EMA), spread filter and kill-switch exist and are tested against a fake exchange and the Binance testnet. **The entry signal is a placeholder: replayed on 250 days of history it did not beat the fees (ADR-006). Don't trade real money with it yet.** Planned: Telegram alerts and CSV export (phase 5), droplet deployment (phase 6). `python -m bot.main` runs the startup checks and then the engine until Ctrl+C; `--check-only` stops after the checks.
+> **Status: phase 4 of 6 (risk and scanner).** The Binance client, account stream, reconciliation, trading engine, entry scanner (RSI + EMA), spread filter and kill-switch exist and are tested against a fake exchange and the Binance testnet. **The entry signal is a placeholder: replayed on 250 days of history it did not beat the fees (ADR-006). Don't trade real money with it yet.** The CSV tax export is built (`python -m bot.reports.tax_exporter`); Telegram alerts are **not built yet**, so alerts are log lines only. Planned: Telegram (finish phase 5), droplet deployment (phase 6). `python -m bot.main` runs the startup checks and then the engine until Ctrl+C; `--check-only` stops after the checks.
 
 The app name is a setting (`APP_NAME`), so the project can be renamed later without touching code.
 
@@ -42,7 +42,8 @@ bot/
 │   ├── state_machine.py      Position state machine and trading engine
 │   ├── runner.py             Stream + tick loop, clean shutdown
 │   └── ledger.py             Profit/loss of a closed trade
-├── reports/              tax_exporter                                           (planned)
+├── reports/
+│   └── tax_exporter.py   Export the tax ledger to CSV (per UTC year)
 └── main.py               Entrypoint
 migrations/               Alembic migrations
 tests/                    pytest (unit + schema tests against PostgreSQL)

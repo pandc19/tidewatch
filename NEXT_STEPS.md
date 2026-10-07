@@ -2,7 +2,13 @@
 
 Pending items only. When something is built or resolved, delete it from this file.
 
-Last updated 2026-10-06, after phase 4 (risk and scanner).
+Last updated 2026-10-06, during phase 5 (CSV export built; Telegram alerts not).
+
+---
+
+## Blocked: the Telegram module
+
+My response containing `bot/services/notifications.py` (the Telegram sender plus the message formatting) was stopped by a safety classifier before anything was written. I don't know what in it triggered the stop, so I have not retried it. Without it, alerts exist only as CRITICAL log lines. Tell me how you want to proceed: for example you write or supply the sender yourself and I wire it to the existing hooks and test it, or you pick a different alert channel.
 
 ---
 
@@ -37,8 +43,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 
 | Topic | Decision |
 |---|---|
-| Notifications | Telegram only (the Bot API is free), implemented as an `EngineObserver` (hooks exist: entry placed/cancelled, exit placed, trade closed, needs attention, kill-switch). Today every alert is only a CRITICAL log line. Also decided and **not built yet**: a reminder every 15 minutes (proposed) while a position is unprotected |
-| CSV export | `reports/tax_exporter.py`: export `tax_ledger` to CSV |
+| Notifications | **Not built.** Telegram only (the Bot API is free), as an `EngineObserver` that queues messages and sends them from a background worker (a slow network must never stall the engine). Built and ready for it: the engine's hooks (entry placed/cancelled, exit placed, trade closed, needs attention, kill-switch, reminder, protected again), the 15-minute reminders while a position is unprotected (`UNPROTECTED_REMINDER_MINUTES`), and readable alert text. Missing: the message formatting and the Telegram sender. My attempt to write that module was stopped by a safety check, see below |
 | Deployment | docker-compose on a DigitalOcean droplet, with an external managed PostgreSQL (connection string only; compose creates no database) |
 
 ---
@@ -70,5 +75,5 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 
 ## Build order
 
-5. Notifications (Telegram observer, with the unprotected-position reminders) and the CSV tax export.
+5. Notifications: the Telegram sender and message formatting (the CSV tax export and the engine-side reminders are done).
 6. Deployment: verify the Dockerfile, compose and droplet guide on a real droplet.

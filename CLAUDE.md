@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Automated Binance spot trading bot. Python 3.12, asyncio, SQLAlchemy + asyncpg, PostgreSQL, Alembic. Status: phase 4 of 6; see [NEXT_STEPS.md](NEXT_STEPS.md) and [docs/README.md](docs/README.md).
+Automated Binance spot trading bot. Python 3.12, asyncio, SQLAlchemy + asyncpg, PostgreSQL, Alembic. Status: phase 5 of 6 (CSV export done, Telegram alerts not yet); see [NEXT_STEPS.md](NEXT_STEPS.md) and [docs/README.md](docs/README.md).
 
 ## Commands
 
@@ -11,6 +11,7 @@ uv sync --python 3.12
 .venv/bin/alembic upgrade head
 .venv/bin/python -m bot.main               # startup checks, then the engine (Ctrl+C stops it)
 .venv/bin/python -m bot.main --check-only   # startup checks only
+.venv/bin/python -m bot.reports.tax_exporter --year 2026   # tax ledger to exports/tax_ledger_2026.csv
 ```
 
 ## Critical rules
