@@ -1604,6 +1604,7 @@ name = "trading-bot"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "pydantic-settings" },
@@ -1620,6 +1621,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.9" },
     { name = "alembic", specifier = ">=1.13" },
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "pydantic-settings", specifier = ">=2.2" },
