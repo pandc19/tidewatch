@@ -1,25 +1,32 @@
-"""Entrypoint: `python -m bot.main`.
+"""Entrypoint: `python -m bot.main [--check-only]`.
 
-Runs the startup checks: configuration, database, every configured pair against
-Binance's live filters, and (with API keys) a reconciliation of stored orders
-with the exchange. The trading loop arrives in phase 3.
+Startup checks (configuration, database, every configured pair against Binance's live
+filters, account lookups), then the engine runs until Ctrl+C or SIGTERM. With
+`--check-only` it also reconciles stored orders with the exchange and exits.
+
+Until the scanner exists (phase 4) the engine opens no new positions: it manages and
+recovers whatever is already in the database.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
+import signal
 import sys
 
-from bot.config.settings import get_settings
+from bot.config.settings import Settings, get_settings
 from bot.database.connection import Database
+from bot.engine.runner import EngineRunner
+from bot.engine.state_machine import TradingEngine
 from bot.services.binance_client import ExchangeClient, ExchangeError
 from bot.services.reconciliation import reconcile
 
 log = logging.getLogger("bot")
 
 
-async def run() -> int:
+async def run(check_only: bool) -> int:
     settings = get_settings()
     logging.basicConfig(
         level=settings.log_level.upper(),
@@ -49,20 +56,14 @@ async def run() -> int:
                 raise ExchangeError(f"{symbol} does not allow OCO orders")
         log.info("all %d pairs are tradable and allow OCO", len(settings.symbols))
 
-        if not settings.has_binance_credentials:
-            log.warning("no API keys: skipping account checks and reconciliation")
-        else:
+        if settings.has_binance_credentials:
             await _account_checks(settings, exchange)
-            async with db.session() as session:
-                report = await reconcile(session, exchange)
-            log.info(
-                "reconciled: %d changes, %d orphans, %d errors%s",
-                len(report.changes), len(report.orphans), len(report.errors),
-                " (dry run: nothing to compare)" if report.skipped_dry_run else "",
-            )
-            if report.errors or report.orphans:
-                log.error("reconciliation found problems; refusing to continue")
-                return 1
+        else:
+            log.warning("no API keys: skipping account checks")
+
+        if check_only:
+            return await _check_reconciliation(settings, db, exchange)
+        return await _run_engine(settings, db, exchange)
     except Exception:
         log.exception("startup check failed")
         return 1
@@ -71,11 +72,37 @@ async def run() -> int:
             await exchange.close()
         await db.dispose()
 
-    log.info("startup checks passed. No trading loop yet (phase 3), exiting")
+
+async def _check_reconciliation(settings: Settings, db: Database, exchange: ExchangeClient) -> int:
+    if not settings.has_binance_credentials:
+        log.info("startup checks passed (no keys: reconciliation skipped)")
+        return 0
+    async with db.session() as session:
+        report = await reconcile(session, exchange)
+    log.info(
+        "reconciled: %d changes, %d orphans, %d errors%s",
+        len(report.changes), len(report.orphans), len(report.errors),
+        " (dry run: nothing to compare)" if report.skipped_dry_run else "",
+    )
+    if report.errors or report.orphans:
+        log.error("reconciliation found problems")
+        return 1
+    log.info("startup checks passed")
     return 0
 
 
-async def _account_checks(settings, exchange: ExchangeClient) -> None:
+async def _run_engine(settings: Settings, db: Database, exchange: ExchangeClient) -> int:
+    engine = TradingEngine(settings=settings, exchange=exchange, session_factory=db.session)
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop.set)
+    log.info("no entry source yet (phase 4): managing existing positions only")
+    await EngineRunner(engine, exchange, settings).run(stop)
+    return 0
+
+
+async def _account_checks(settings: Settings, exchange: ExchangeClient) -> None:
     """Informational: a failure here is logged, not fatal (these endpoints differ on testnet)."""
     try:
         fee = await exchange.account_fees()
@@ -86,7 +113,10 @@ async def _account_checks(settings, exchange: ExchangeClient) -> None:
 
 
 def main() -> None:
-    sys.exit(asyncio.run(run()))
+    parser = argparse.ArgumentParser(prog="python -m bot.main")
+    parser.add_argument("--check-only", action="store_true", help="run the startup checks, then exit")
+    args = parser.parse_args()
+    sys.exit(asyncio.run(run(args.check_only)))
 
 
 if __name__ == "__main__":
