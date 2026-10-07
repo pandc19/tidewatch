@@ -13,6 +13,7 @@ Rules enforced at this lowest layer, so no caller can bypass them:
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -129,6 +130,7 @@ class Fill:
     commission_asset: str
     time: datetime
     is_maker: bool
+    is_buyer: bool
 
     @classmethod
     def from_binance(cls, d: dict[str, Any]) -> Fill:
@@ -142,6 +144,7 @@ class Fill:
             commission_asset=d["commissionAsset"],
             time=datetime.fromtimestamp(int(d["time"]) / 1000, tz=UTC),
             is_maker=bool(d.get("isMaker", False)),
+            is_buyer=bool(d.get("isBuyer", False)),
         )
 
 
@@ -247,12 +250,28 @@ class ExchangeClient:
         d = await self._client.get_orderbook_ticker(symbol=symbol)
         return BookTicker(symbol, to_decimal(d["bidPrice"]), to_decimal(d["askPrice"]))
 
+    async def closed_candle_closes(self, symbol: str, interval: str, limit: int = 100) -> list[Decimal]:
+        """Closing prices of the last `limit` *finished* candles, oldest first.
+
+        Binance's kline list ends with the candle still forming; it is dropped, because
+        an unfinished candle's close is just the current price.
+        """
+        rows = await self._client.get_klines(symbol=symbol, interval=interval, limit=limit)
+        now_ms = int(time.time() * 1000)
+        return [to_decimal(r[4]) for r in rows if int(r[6]) < now_ms]  # r[4] close, r[6] close time
+
     # --- account (signed) ------------------------------------------------------------------
 
     async def free_balance(self, asset: str) -> Decimal:
         self._need_credentials()
         d = await self._client.get_asset_balance(asset=asset)
         return to_decimal(d["free"]) if d else ZERO
+
+    async def total_balance(self, asset: str) -> Decimal:
+        """Free plus locked (for example quote currency tied up in an open buy order)."""
+        self._need_credentials()
+        d = await self._client.get_asset_balance(asset=asset)
+        return to_decimal(d["free"]) + to_decimal(d["locked"]) if d else ZERO
 
     async def account_fees(self) -> TradeFee:
         """The account's maker/taker rates, from `/api/v3/account` (`commissionRates`).
@@ -422,6 +441,16 @@ class ExchangeClient:
         self._need_credentials()
         rows = await self._client.get_my_trades(symbol=symbol, orderId=order_id)
         return [Fill.from_binance(r) for r in rows]
+
+    async def recent_trades(self, symbol: str, since: datetime) -> list[Fill]:
+        """Your last 500 trades on `symbol` at or after `since`, buys and sells, any origin.
+
+        Used to notice a sale made by hand. (Binance limits a time-ranged query to 24 hours,
+        so the last 500 are fetched and filtered here instead.)
+        """
+        self._need_credentials()
+        rows = await self._client.get_my_trades(symbol=symbol, limit=500)
+        return [f for f in map(Fill.from_binance, rows) if f.time >= since]
 
     # --- helpers ---------------------------------------------------------------------------
 

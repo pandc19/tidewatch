@@ -69,7 +69,9 @@ def order_dict(
     }
 
 
-def trade_dict(trade_id: int, order_id: int, *, price: str, qty: str, commission: str, asset: str) -> dict[str, Any]:
+def trade_dict(
+    trade_id: int, order_id: int, *, price: str, qty: str, commission: str, asset: str, is_buyer: bool = False
+) -> dict[str, Any]:
     quote = str(__import__("decimal").Decimal(price) * __import__("decimal").Decimal(qty))
     return {
         "id": trade_id,
@@ -81,6 +83,7 @@ def trade_dict(trade_id: int, order_id: int, *, price: str, qty: str, commission
         "commissionAsset": asset,
         "time": 1_790_000_000_000,
         "isMaker": True,
+        "isBuyer": is_buyer,
     }
 
 
@@ -95,6 +98,8 @@ class FakeBinance:
         self.balances: dict[str, str] = {"USDT": "16.00000000"}
         self.orders: dict[int, dict[str, Any]] = {}
         self.trades: dict[int, list[dict[str, Any]]] = {}
+        self.klines: dict[str, list[list]] = {}
+        self.tickers: dict[str, tuple[str, str]] = {}  # per-symbol (bid, ask) overrides
         self.open: list[dict[str, Any]] | None = None  # None: computed from live orders
         self.raise_on: dict[str, Exception] = {}
         self.raise_once: dict[str, list[Exception]] = {}  # consumed one per call
@@ -149,10 +154,20 @@ class FakeBinance:
             self._add("USDT", qty_d * price_d - (fee_d if fee_asset == "USDT" else 0))
         tid = 10_000 + sum(len(v) for v in self.trades.values()) + 1
         self.trades.setdefault(order_id, []).append(
-            trade_dict(tid, order_id, price=str(price_d), qty=str(qty_d), commission=str(fee_d), asset=fee_asset)
+            trade_dict(tid, order_id, price=str(price_d), qty=str(qty_d), commission=str(fee_d), asset=fee_asset,
+                       is_buyer=o["side"] == "BUY")
         )
         if done and o["orderListId"] != -1:  # the other OCO leg is cancelled by the exchange
             self._cancel_list(o["orderListId"], except_id=order_id, status=self.counterpart_status)
+
+    def manual_sell(self, qty: str, price: str, *, symbol: str = "SOLUSDT") -> int:
+        """The owner sells by hand in the Binance app (a market-style fill with an unknown order id)."""
+        self._next_id += 1
+        oid = self._next_id
+        self.orders[oid] = order_dict(oid, f"web_{oid}", symbol=symbol, side="SELL", type_="MARKET",
+                                      price="0", qty=qty)
+        self.fill(oid, price=price, qty=qty)
+        return oid
 
     counterpart_status = "CANCELED"  # Binance's wording for the losing OCO leg is not confirmed
 
@@ -180,7 +195,8 @@ class FakeBinance:
 
     async def get_orderbook_ticker(self, **kw):
         self._rec("get_orderbook_ticker", kw)
-        return {"symbol": kw["symbol"], "bidPrice": self.bid, "askPrice": self.ask}
+        bid, ask = self.tickers.get(kw["symbol"], (self.bid, self.ask))
+        return {"symbol": kw["symbol"], "bidPrice": bid, "askPrice": ask}
 
     # --- account
     async def get_asset_balance(self, **kw):
@@ -261,7 +277,27 @@ class FakeBinance:
 
     async def get_my_trades(self, **kw):
         self._rec("get_my_trades", kw)
-        return self.trades.get(kw["orderId"], [])
+        if "orderId" in kw:
+            return self.trades.get(kw["orderId"], [])
+        return [t for ts in self.trades.values() for t in ts][-kw.get("limit", 500):]
+
+    async def get_klines(self, **kw):
+        self._rec("get_klines", kw)
+        return self.klines.get(kw["symbol"], [])
 
     async def close_connection(self):
         self._rec("close_connection", {})
+
+
+def klines_from(closes: list[str], *, interval_ms: int = 3_600_000, still_open: bool = True) -> list[list]:
+    """Binance-shaped kline rows ending now. The last candle is the one still forming when `still_open`."""
+    import time
+
+    now = int(time.time() * 1000)
+    rows = []
+    for i, close in enumerate(closes):
+        last = i == len(closes) - 1
+        close_time = now + interval_ms // 2 if (last and still_open) else now - 1000 - (len(closes) - 1 - i) * interval_ms  # a finished candle ended in the past
+        open_time = close_time - interval_ms + 1
+        rows.append([open_time, close, close, close, close, "10", close_time, "0", 1, "0", "0", "0"])
+    return rows

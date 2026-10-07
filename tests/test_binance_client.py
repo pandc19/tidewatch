@@ -14,7 +14,7 @@ from bot.services.binance_client import (
     OrderRejected,
     to_order_status,
 )
-from tests.fakes import FakeBinance, api_error, order_dict, trade_dict
+from tests.fakes import FakeBinance, api_error, klines_from, order_dict, trade_dict
 
 D = Decimal
 
@@ -62,6 +62,38 @@ async def test_balance_and_fee():
     fee = await ex.account_fees()
     assert fee.maker == fee.taker == D("0.001")
     assert fake.called("get_account") and not fake.called("get_trade_fee")  # /sapi is never used
+
+
+async def test_candle_closes_drop_the_candle_still_forming():
+    ex, fake = make()
+    fake.klines["SOLUSDT"] = klines_from(["100", "101", "102", "103"], still_open=True)
+    assert await ex.closed_candle_closes("SOLUSDT", "1h", 4) == [D("100"), D("101"), D("102")]
+    fake.klines["SOLUSDT"] = klines_from(["100", "101"], still_open=False)
+    assert await ex.closed_candle_closes("SOLUSDT", "1h", 2) == [D("100"), D("101")]
+    assert fake.called("get_klines")[0] == {"symbol": "SOLUSDT", "interval": "1h", "limit": 4}
+
+
+async def test_total_balance_counts_locked_funds_too():
+    ex, fake = make()
+
+    async def with_locked(**kw):
+        fake.calls.append(("get_asset_balance", kw))
+        return {"asset": "USDT", "free": "10.5", "locked": "5.5"}
+
+    fake.get_asset_balance = with_locked
+    assert await ex.total_balance("USDT") == D("16")
+
+
+async def test_recent_trades_are_filtered_by_time_and_say_who_bought():
+    from datetime import UTC, datetime
+
+    ex, fake = make()
+    fake.orders[5] = order_dict(5, "x", side="SELL", qty="0.13")
+    fake.fill(5, price="125", qty="0.13")  # recorded at the fake's fixed trade time
+    trade_time = (await ex.recent_trades("SOLUSDT", datetime(2000, 1, 1, tzinfo=UTC)))[0].time
+    assert [t.is_buyer for t in await ex.recent_trades("SOLUSDT", trade_time)] == [False]
+    assert await ex.recent_trades("SOLUSDT", datetime(2100, 1, 1, tzinfo=UTC)) == []
+    assert fake.called("get_my_trades")[0] == {"symbol": "SOLUSDT", "limit": 500}  # no 24h time-range query
 
 
 async def test_signed_calls_need_credentials():
