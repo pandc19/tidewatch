@@ -33,5 +33,6 @@ docs/
     ├── 002-positions-and-order-schema.md
     ├── 003-safe-defaults-and-single-position.md
     ├── 004-stream-is-notification-rest-is-truth.md
-    └── 005-engine-evaluates-state.md
+    ├── 005-engine-evaluates-state.md
+    └── 006-risk-controls-and-the-entry-signal.md
 ```

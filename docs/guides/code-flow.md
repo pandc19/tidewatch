@@ -18,11 +18,11 @@ How one trade moves through the system, and why each step is shaped the way it i
 
 **Cancel reasons.** An order found cancelled with no reason is labelled `EXTERNAL`; the engine passes its own reason (`ENTRY_TIMEOUT`, `KILL_SWITCH`) when it cancels on purpose; the losing leg of an OCO pair becomes `OCO_COUNTERPART_FILLED`, whichever leg syncs first.
 
-## 2. Scan and size an entry **(planned, phase 4)**
+## 2. Scan and size an entry (built, phase 4)
 
-For each pair in `SYMBOLS`: RSI oversold plus EMA rebound. If several signal, the lowest RSI that also passes the spread filter (≤ `MAX_SPREAD_PCT`) wins. Size = `ALLOCATION_PCT` of the free quote balance, then rounded and checked with [precision.py](../../bot/config/precision.py).
+`Scanner` (an `EntrySource`) runs at most every `SCAN_EVERY_SECONDS`. For each pair in `SYMBOLS` it takes the closed candles (the one still forming is dropped), computes RSI and EMA ([indicators.py](../../bot/services/indicators.py), checked against StockCharts' published examples) and applies one rule: RSI was at or below `RSI_OVERSOLD` within the last `RSI_LOOKBACK` candles **and** the latest close crossed up through the EMA (so a dip signals on exactly one candle). Signalling pairs with a spread over `MAX_SPREAD_PCT` are dropped; the lowest RSI of the rest wins, and the entry is a limit buy at the best bid (optionally `ENTRY_DISCOUNT_PCT` below).
 
-*Why a fixed order of checks:* rounding comes first because Binance validates the rounded values, and a startup check refuses configurations whose orders would fall under Binance's minimum order value (about $5 on SOL/USDT, checked 2026-10-06).
+**Honest caveat:** this rule is a placeholder. Replayed on 250 days of hourly history it won 33% of the time against the 36.7% needed (ADR-006). The engine does the gating and sizing: `size_entry` rounds down to the step and refuses a trade whose stop-loss sell could not be placed after fees (Binance's minimum order value).
 
 ## 3. Place the entry (built, phase 3)
 
@@ -30,7 +30,7 @@ For each pair in `SYMBOLS`: RSI oversold plus EMA rebound. If several signal, th
 
 ## 4. Fill → OCO exit (built, phase 3)
 
-`_evaluate` sees the buy `FILLED` (or cancelled with a partial fill) and opens the position: quantity is what was filled minus the coin fee, entry price is the average fill. `_place_exit` sells that quantity (plus a sub-step crumb, never the owner's own coins), with take-profit `entry × (1 + take_profit_pct)`, stop trigger `entry × (1 − stop_loss_pct)` and a stop-limit `STOP_LIMIT_OFFSET_PCT` below it. The two exit rows are committed before the OCO is sent. If Binance refuses with -2010 (the market already passed the target), the take-profit is moved just above the best ask and retried once; if still refused, the exit orders are marked `REJECTED`, the position is flagged as unprotected, and the tick retries.
+`_evaluate` sees the buy `FILLED` (or cancelled with a partial fill) and opens the position: quantity is what was filled minus the coin fee, entry price is the average fill. `_place_exit` sells that quantity (plus a sub-step crumb, never the owner's own coins), with take-profit `entry × (1 + take_profit_pct)`, stop trigger `entry × (1 − stop_loss_pct)` and a stop-limit `STOP_LIMIT_OFFSET_PCT` below it. The two exit rows are committed before the OCO is sent. If Binance refuses with -2010 because the market already passed one of the two prices, it is corrected once and retried: past the **target**, the take-profit moves just above the best ask; past the **stop**, an emergency stop is placed `STOP_LOSS_PCT` below the *current* bid (take-profit unchanged) and the owner is told, so the loss is bounded instead of the coins left bare. If it is still refused, the same two `REJECTED` rows are reused, the position is flagged as unprotected, and the tick retries no more often than `EXIT_RETRY_SECONDS`. Nothing is ever sold on the bot's own initiative.
 
 ## 5. Timeout rotation (built, phase 3)
 
@@ -38,11 +38,11 @@ Each tick cancels buys past `expires_at` through `sync_order(..., cancel_reason=
 
 ## 6. Close and record (built, phase 3)
 
-When an exit leg is `FILLED`, `_close` computes the result (`engine/ledger.py`), sets the position `CLOSED` with `exit_reason` (`TAKE_PROFIT` for the limit-maker leg, `STOP_LOSS` otherwise), writes one `tax_ledger` row using the exchange's fill times, adds to that UTC day's `daily_pnl`, and syncs the other leg so it ends terminal and labelled `OCO_COUNTERPART_FILLED`. Profit is `total_sell − total_buy − cash fees`; the coin fee on the buy is not subtracted twice (see `ledger.py`). The CSV export and the Telegram message arrive in phase 5 (observer hooks are in place).
+When an exit leg is `FILLED`, `_close` computes the result (`engine/ledger.py`), sets the position `CLOSED` with `exit_reason` (`TAKE_PROFIT` for the limit-maker leg, `STOP_LOSS` otherwise), writes one `tax_ledger` row using the exchange's fill times, adds to that UTC day's `daily_pnl`, and syncs the other leg so it ends terminal and labelled `OCO_COUNTERPART_FILLED`. Profit is `total_sell − total_buy − cash fees`; the coin fee on the buy is not subtracted twice (see `ledger.py`). If the owner sells by hand, the bot notices (an OPEN position with no live or filled exit, and a sell in the account's trade history that none of its orders explains) and closes the position as `MANUAL`, booking exactly the position's quantity from the real trade prices and fees; a partial sale is flagged, not guessed at. The CSV export and the Telegram message arrive in phase 5 (observer hooks are in place).
 
-## 7. Kill-switch **(planned, phase 4)**
+## 7. Kill-switch (built, phase 4)
 
-If realised losses over a rolling 24 hours reach `DAILY_LOSS_LIMIT_PCT` of the account: call `engine.cancel_pending_entries(KILL_SWITCH, ...)` (built), write a `kill_switch_events` row (loss, limit, window), set `bot_state.trading_paused_until`, alert. It never sells an open position, which keeps its own OCO. The engine already refuses new entries while the pause is active, and the pause lives in the database so a restart can't forget it.
+Checked first on every tick. It adds up the realised PnL of positions closed in the last 24 hours (gains offset losses). If the net result is a loss of at least `DAILY_LOSS_LIMIT_PCT` of the account (quote balance plus open positions at entry cost), it cancels unfilled entry buys (reason `KILL_SWITCH`, linked to a new `kill_switch_events` row), sets `bot_state.trading_paused_until` for `KILL_SWITCH_COOLDOWN_HOURS` (stored, so a restart cannot forget it), marks the day in `daily_pnl`, and alerts. It never sells: an open position keeps its own OCO. After a trip only newer losses count, so the same ones cannot trip it twice. The engine refuses new entries while the pause lasts.
 
 ## How the pieces run
 

@@ -38,8 +38,9 @@
 
 ## Adding things
 
+- **A different entry signal:** change `evaluate_signal` in `scanner.py` (a pure function of closing prices, easy to test with hand-built series; start from `tests/test_scanner.py`). The scanner already ranks, spread-filters and picks. Replay it on history before trusting it (the replay in ADR-006 is a few lines against public candles).
 - **An entry strategy:** implement `EntrySource.next_entry()` (returns an `EntrySignal` with the symbol and limit price, or None). The engine does the gating, sizing, persisting and protecting; the source only decides *what* to buy.
-- **A notification:** subclass `EngineObserver` (hooks: entry placed/cancelled, exit placed, trade closed, needs attention) and pass it to `TradingEngine`.
+- **A notification:** subclass `EngineObserver` (hooks: entry placed/cancelled, exit placed, trade closed, needs attention, kill-switch tripped) and pass it to `TradingEngine`.
 
 - **A setting:** add the field with validation to `Settings`, add it to `.env.example`, add a case to `tests/test_settings.py`.
 - **A new alert channel (planned):** implement the notification interface in `services/notifications.py`. The engine must only talk to the interface.
