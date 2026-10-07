@@ -410,7 +410,7 @@ class TradingEngine:
                 position_id,
                 "exits-cancelled",
                 f"{symbol}: your sell orders were cancelled outside the bot. "
-                f"You still hold {held} {symbol} with no stop-loss.",
+                f"You still hold {held:f} {symbol.removesuffix(self._settings.quote_asset)} with no stop-loss.",
             )
         await self._remind_unprotected(position_id)
 
@@ -633,7 +633,8 @@ class TradingEngine:
         await self._flag_unprotected(
             position_id,
             "exit-refused",
-            f"{symbol}: Binance refused the sell orders ({detail}). You hold {quantity} with no stop-loss. "
+            f"{symbol}: Binance refused the sell orders ({detail}). "
+            f"You hold {quantity:f} {symbol.removesuffix(self._settings.quote_asset)} with no stop-loss. "
             f"Retrying every {self._settings.exit_retry_seconds}s.",
         )
 
