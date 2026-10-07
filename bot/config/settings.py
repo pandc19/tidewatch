@@ -10,7 +10,7 @@ from __future__ import annotations
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -76,6 +76,17 @@ class Settings(BaseSettings):
     # Gap between the stop trigger and the stop-limit price, so the sell can still fill.
     stop_limit_offset_pct: Decimal = Field(default=Decimal("0.002"), ge=0, lt=1)
 
+    # Entry signal (a starting point, not a backtested strategy): RSI was oversold within the
+    # last RSI_LOOKBACK closed candles AND the latest close crossed up through the EMA.
+    scan_interval: Literal["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"] = "1h"
+    rsi_period: int = Field(default=14, ge=2)
+    rsi_oversold: Decimal = Field(default=Decimal(30), gt=0, lt=100)
+    rsi_lookback: int = Field(default=6, ge=1)
+    ema_period: int = Field(default=9, ge=2)
+    # Place the entry this far below the best bid (0 = at the bid).
+    entry_discount_pct: Decimal = Field(default=Decimal(0), ge=0, lt=Decimal("0.1"))
+    scan_every_seconds: int = Field(default=60, ge=1)
+
     # Risk
     # Share of the free quote balance used by one trade. 0.98 leaves room for rounding.
     allocation_pct: Decimal = Field(default=Decimal("0.98"), gt=0, le=1)
@@ -86,6 +97,8 @@ class Settings(BaseSettings):
 
     # Engine: how often it checks entry timeouts, unprotected positions and new entries.
     engine_tick_seconds: int = Field(default=30, ge=1)
+    # Minimum gap between attempts to place a refused exit again.
+    exit_retry_seconds: int = Field(default=120, ge=1)
 
     # Notifications
     telegram_bot_token: SecretStr = SecretStr("")

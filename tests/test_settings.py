@@ -166,3 +166,34 @@ def test_order_id_prefix_is_defaulted_and_validated():
     for bad in ("", "has-dash", "x" * 13, "sp ace"):
         with pytest.raises(ValidationError):
             make(ORDER_ID_PREFIX=bad)
+
+
+# --- entry signal and retry settings ------------------------------------------------------
+
+
+def test_signal_defaults():
+    s = make()
+    assert (s.scan_interval, s.rsi_period, s.rsi_oversold, s.rsi_lookback, s.ema_period) == (
+        "1h", 14, Decimal(30), 6, 9,
+    )
+    assert s.entry_discount_pct == 0 and s.scan_every_seconds == 60 and s.exit_retry_seconds == 120
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("SCAN_INTERVAL", "7m"),  # not a Binance candle size
+        ("RSI_PERIOD", "1"),
+        ("RSI_OVERSOLD", "0"),
+        ("RSI_OVERSOLD", "100"),
+        ("RSI_LOOKBACK", "0"),
+        ("EMA_PERIOD", "1"),
+        ("ENTRY_DISCOUNT_PCT", "-0.01"),
+        ("ENTRY_DISCOUNT_PCT", "0.1"),
+        ("SCAN_EVERY_SECONDS", "0"),
+        ("EXIT_RETRY_SECONDS", "0"),
+    ],
+)
+def test_out_of_range_signal_settings_are_rejected(field, value):
+    with pytest.raises(ValidationError):
+        make(**{field: value})
