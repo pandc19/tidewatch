@@ -21,6 +21,7 @@ from bot.database.connection import Database
 from bot.engine.runner import EngineRunner
 from bot.engine.state_machine import EntrySource, NoEntries, TradingEngine
 from bot.services.binance_client import ExchangeClient, ExchangeError
+from bot.services.notifications import NotificationService, build_notifier, send_test_message
 from bot.services.reconciliation import reconcile
 from bot.services.risk_manager import config_problems
 from bot.services.scanner import Scanner
@@ -67,6 +68,7 @@ async def run(check_only: bool) -> int:
             return 1
 
         if check_only:
+            await _check_telegram(settings)
             return await _check_reconciliation(settings, db, exchange)
         return await _run_engine(settings, db, exchange)
     except Exception:
@@ -96,6 +98,18 @@ async def _check_reconciliation(settings: Settings, db: Database, exchange: Exch
     return 0
 
 
+async def _check_telegram(settings: Settings) -> None:
+    """Sends a test message when Telegram is configured. A failure is logged, not fatal."""
+    if not settings.telegram_enabled:
+        log.info("telegram: not configured, skipping the test message")
+        return
+    problem = await send_test_message(settings)
+    if problem is None:
+        log.info("telegram: test message delivered")
+    else:
+        log.error("telegram: test message failed: %s", problem)
+
+
 async def _config_checks(settings: Settings, exchange: ExchangeClient, free_quote) -> bool:
     """Refuse to start on a strategy that cannot work (for example a profit target under the fees)."""
     filters = {s: await exchange.symbol_filters(s) for s in settings.symbols}
@@ -121,14 +135,29 @@ async def _run_engine(settings: Settings, db: Database, exchange: ExchangeClient
     else:
         source = NoEntries()
         log.warning("no API keys: nothing to scan with, managing existing positions only")
+    alerts: NotificationService | None = None
+    if settings.telegram_enabled:
+        alerts = NotificationService(settings, build_notifier(settings))
+        alerts.start()
+    else:
+        log.warning("telegram is not configured: alerts go to the log only")
     engine = TradingEngine(
-        settings=settings, exchange=exchange, session_factory=db.session, entry_source=source
+        settings=settings, exchange=exchange, session_factory=db.session, entry_source=source,
+        observer=alerts,
     )
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
-    await EngineRunner(engine, exchange, settings).run(stop)
+    try:
+        if alerts:
+            alerts.announce_started()
+        await EngineRunner(engine, exchange, settings).run(stop)
+        if alerts:
+            alerts.announce_stopped()
+    finally:
+        if alerts:
+            await alerts.close()  # flushes what it can, within a time limit
     return 0
 
 
