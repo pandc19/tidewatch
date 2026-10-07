@@ -31,11 +31,15 @@
 ## Tests
 
 - Unit tests (`test_precision.py`, `test_settings.py`, `test_binance_client.py`, `test_user_stream.py`) need nothing.
-- `tests/fakes.py` has `FakeBinance`, a stand-in for python-binance's client that returns Binance-shaped dicts and records every call, so tests can assert what was (or was not) sent. Add new endpoints there, copying real response shapes.
+- `tests/fakes.py` has `FakeBinance`, a stateful stand-in for python-binance's client: orders it accepts persist, `fill()`/`cancel_externally()` move balances and cancel the other OCO leg, and every call is recorded so tests can assert what was (or was not) sent. Add new endpoints there, copying real response shapes.
+- `tests/test_engine.py` drives whole trades against the real database and that fake. The engine takes a `session_factory`, so tests hand it the shared rolled-back session. When you change engine behaviour, break it on purpose once and check a test fails.
 - Schema and reconciliation tests run against the real migrated PostgreSQL inside a transaction that is rolled back (`tests/conftest.py`), and skip if no database is reachable.
 - Fixtures for Binance filters mirror live `exchangeInfo` responses. When adding one, copy a real response instead of inventing values.
 
 ## Adding things
+
+- **An entry strategy:** implement `EntrySource.next_entry()` (returns an `EntrySignal` with the symbol and limit price, or None). The engine does the gating, sizing, persisting and protecting; the source only decides *what* to buy.
+- **A notification:** subclass `EngineObserver` (hooks: entry placed/cancelled, exit placed, trade closed, needs attention) and pass it to `TradingEngine`.
 
 - **A setting:** add the field with validation to `Settings`, add it to `.env.example`, add a case to `tests/test_settings.py`.
 - **A new alert channel (planned):** implement the notification interface in `services/notifications.py`. The engine must only talk to the interface.

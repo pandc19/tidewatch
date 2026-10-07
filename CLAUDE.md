@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Automated Binance spot trading bot. Python 3.12, asyncio, SQLAlchemy + asyncpg, PostgreSQL, Alembic. Status: phase 2 of 6; see [NEXT_STEPS.md](NEXT_STEPS.md) and [docs/README.md](docs/README.md).
+Automated Binance spot trading bot. Python 3.12, asyncio, SQLAlchemy + asyncpg, PostgreSQL, Alembic. Status: phase 3 of 6; see [NEXT_STEPS.md](NEXT_STEPS.md) and [docs/README.md](docs/README.md).
 
 ## Commands
 
@@ -9,14 +9,16 @@ uv sync --python 3.12
 .venv/bin/pytest
 .venv/bin/ruff check .
 .venv/bin/alembic upgrade head
-.venv/bin/python -m bot.main
+.venv/bin/python -m bot.main               # startup checks, then the engine (Ctrl+C stops it)
+.venv/bin/python -m bot.main --check-only   # startup checks only
 ```
 
 ## Critical rules
 
 - This code will trade real money. Money, prices, quantities and percentages are `Decimal`, never `float`.
 - Every price and quantity goes through `bot/config/precision.py` (round, then `validate_order`) before it reaches Binance.
-- Only `bot/services/binance_client.py` talks to Binance REST. It enforces filters and `DRY_RUN`; don't bypass it.
+- Only `bot/services/binance_client.py` talks to Binance REST. It enforces filters and `DRY_RUN`; don't bypass it. Never use python-binance's `/sapi` helpers: they ignore `testnet=True` and hit the real exchange.
+- Engine state changes go through `TradingEngine._evaluate` under its lock; commit an order row *before* sending it (see ADR-005).
 - Never send an order, or use real API keys, unless the user explicitly asks. Keep `DRY_RUN` and `BINANCE_TESTNET` defaulting to true.
 - Never log or print secrets (`SecretStr`).
 - The app name lives only in `APP_NAME`, `pyproject.toml` and the compose project name.
@@ -27,4 +29,4 @@ uv sync --python 3.12
 
 ## Layout
 
-`bot/config` (settings, precision), `bot/database` (connection, models), `bot/services` (binance_client, user_stream, reconciliation), `bot/engine`, `bot/reports`, `migrations/`, `tests/`, `docs/`.
+`bot/config` (settings, precision), `bot/database` (connection, models), `bot/services` (binance_client, user_stream, reconciliation, risk_manager), `bot/engine` (state_machine, runner, ledger), `bot/engine`, `bot/reports`, `migrations/`, `tests/`, `docs/`.

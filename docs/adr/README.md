@@ -10,6 +10,7 @@ An ADR records a significant technical decision: the context, the decision, and 
 | [002](002-positions-and-order-schema.md) | Positions table and order schema | Accepted |
 | [003](003-safe-defaults-and-single-position.md) | Safe defaults and one position at a time | Accepted |
 | [004](004-stream-is-notification-rest-is-truth.md) | The account stream is a notification, REST is the truth | Accepted |
+| [005](005-engine-evaluates-state.md) | The engine evaluates state, persists before sending, and does not repair what the owner cancels | Accepted |
 
 ## Template
 
