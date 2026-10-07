@@ -15,6 +15,7 @@ from bot.database.models import (
     CancelReason,
     DailyPnl,
     ExitReason,
+    KillSwitchEvent,
     Order,
     OrderSide,
     OrderStatus,
@@ -69,6 +70,9 @@ class Recorder(EngineObserver):
 
     async def attention(self, message):
         self.events.append(("attention", message))
+
+    async def kill_switch(self, event):
+        self.events.append(("kill_switch", event.realized_loss_usd))
 
     def kinds(self):
         return [e[0] for e in self.events]
@@ -429,22 +433,150 @@ async def test_a_take_profit_already_passed_is_moved_just_above_the_market(h):
     assert "attention" not in h.obs.kinds()
 
 
-async def test_an_exit_the_exchange_keeps_refusing_is_flagged_once_and_retried(h):
+async def test_an_exit_the_exchange_keeps_refusing_is_flagged_once_and_retried_without_piling_up_rows(h):
     h.fake.raise_on["create_oco_order"] = api_error(-2010, "The relationship of the prices for the orders is not correct.")
     await h.open_and_fill()
 
-    pos = await h.position()
-    assert pos.status == PositionStatus.OPEN  # holding coins with no exit: must not look fine
+    assert (await h.position()).status == PositionStatus.OPEN  # holding coins with no exit: must not look fine
     assert [o.status for o in await h.orders(OrderSide.SELL)] == [OrderStatus.REJECTED] * 2
-    assert h.obs.kinds().count("attention") == 1
+    assert h.obs.kinds().count("attention") == 1 and len(h.fake.called("create_oco_order")) == 1
 
-    await h.engine.tick()  # still refused: retried, not re-announced
-    assert h.obs.kinds().count("attention") == 1
+    await h.engine.tick()  # inside the retry window: not tried again
+    assert len(h.fake.called("create_oco_order")) == 1
+
+    h.clock.advance(seconds=121)
+    await h.engine.tick()  # tried again, still refused, not re-announced
+    assert len(h.fake.called("create_oco_order")) == 2 and h.obs.kinds().count("attention") == 1
+    assert len(await h.orders(OrderSide.SELL)) == 2  # the same two rows, reused
 
     h.fake.raise_on.clear()
+    h.clock.advance(seconds=121)
     await h.engine.tick()  # the market is fine again
-    live = [o for o in await h.orders(OrderSide.SELL) if o.status == OrderStatus.NEW]
-    assert len(live) == 2 and live[0].order_list_id is not None
+    legs = await h.orders(OrderSide.SELL)
+    assert len(legs) == 2 and all(o.status == OrderStatus.NEW and o.order_list_id for o in legs)
+
+
+async def test_a_stop_the_price_already_fell_past_is_replaced_by_an_emergency_stop_below_the_market(h):
+    h.fake.raise_once["create_oco_order"] = [api_error(-2010, "The relationship of the prices for the orders is not correct.")]
+    h.fake.bid = "116.00000000"  # fell through the planned 118.00 stop before the OCO could be placed
+    await h.open_and_fill()
+
+    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS_LIMIT)
+    assert tp.target_price == D("125.22")  # the take-profit is untouched
+    assert (sl.stop_price, sl.target_price) == (D("113.68"), D("113.45"))  # 2% below the CURRENT bid
+    assert len(h.fake.called("create_oco_order")) == 2
+    assert h.fake.called("create_oco_order")[-1]["belowStopPrice"] == "113.68"
+    assert sl.status == OrderStatus.NEW
+    assert (await h.position()).status == PositionStatus.OPEN
+    (message,) = [e[1] for e in h.obs.events if e[0] == "attention"]  # the owner is told, once
+    assert "116" in message and "118" in message and "113.68" in message and "5." in message
+
+
+async def test_a_normal_stop_never_triggers_the_emergency_path(h):
+    await h.open_and_fill()
+    assert (await h.leg(OrderType.STOP_LOSS_LIMIT)).stop_price == D("118.00")
+    assert "attention" not in h.obs.kinds()
+
+
+async def test_a_position_with_nothing_left_to_sell_is_flagged_not_sent_as_a_zero_order(h):
+    await h.engine.open_position(SIGNAL)
+    buy = await h.buy()
+    h.fake.fill(buy.binance_order_id, price="120.41")
+    h.fake.balances["SOL"] = "0.0001"  # the coins are gone (moved or sold elsewhere)
+    await h.engine.on_stream_event(h.event(buy, "FILLED"))
+    await h.engine.tick()
+    assert h.fake.called("create_oco_order") == []
+    assert h.obs.kinds().count("attention") == 1
+    assert (await h.position()).status == PositionStatus.OPEN
+
+
+# --- the owner sells by hand --------------------------------------------------------------
+
+
+async def cancel_exits_in_the_app(h):
+    tp = await h.leg(OrderType.LIMIT_MAKER)
+    h.fake.cancel_externally(tp.binance_order_id)
+    await h.engine.on_stream_event(h.event(tp, "CANCELED"))
+    await h.engine.tick()
+
+
+async def test_a_sale_made_by_hand_closes_the_position_as_manual(h):
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+    assert (await h.position()).status == PositionStatus.OPEN  # cancelled, not sold yet: only flagged
+    assert h.obs.kinds().count("attention") == 1
+
+    h.fake.manual_sell("0.129", "123.00")
+    await h.engine.tick()
+
+    pos = await h.position()
+    assert pos.status == PositionStatus.CLOSED and pos.exit_reason == ExitReason.MANUAL
+    assert pos.exit_price == D("123.00") and pos.opened_at <= pos.closed_at
+    # 0.129 x 123 = 15.867 back; 0.130 x 120.41 = 15.6533 spent; 0.015867 USDT fee on the sale
+    expected = D("15.867") - D("15.6533") - D("0.015867")
+    assert pos.realized_pnl_usd == expected
+    (row,) = (await h.session.scalars(select(TaxLedger))).all()
+    assert (row.amount_operated, row.net_profit_usd) == (D("0.129"), expected)
+    manual = [o for o in await h.orders(OrderSide.SELL) if o.client_order_id.startswith("manual-")]
+    assert len(manual) == 1 and "outside the bot" in manual[0].cancel_detail
+    assert "trade_closed" in h.obs.kinds()
+
+
+async def test_only_the_positions_share_of_a_bigger_manual_sale_is_booked(h):
+    h.fake.balances["SOL"] = "4"  # the owner also holds coins of their own
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+
+    h.fake.manual_sell("4.12987", "123.00")  # sells everything, theirs included
+    await h.engine.tick()
+
+    (row,) = (await h.session.scalars(select(TaxLedger))).all()
+    assert row.amount_operated == D("0.12987")  # exactly what the bot held, not 4.12987
+    assert (await h.position()).status == PositionStatus.CLOSED
+
+
+async def test_a_partial_manual_sale_is_flagged_and_not_guessed_at(h):
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+    h.fake.manual_sell("0.05", "123.00")
+    await h.engine.tick()
+    await h.engine.tick()
+    assert (await h.position()).status == PositionStatus.OPEN
+    assert (await h.session.scalar(select(TaxLedger.id))) is None
+    messages = [e[1] for e in h.obs.events if e[0] == "attention"]
+    assert sum("Partial manual sales" in m for m in messages) == 1  # said once
+
+
+async def test_trade_history_is_not_even_fetched_while_the_exits_are_live(h):
+    await h.open_and_fill()
+    await h.engine.tick()
+    await h.engine.tick()
+    assert [c for c in h.fake.called("get_my_trades") if "limit" in c] == []  # only per-order fill lookups
+
+
+# --- the kill-switch inside the engine ----------------------------------------------------
+
+
+async def test_the_kill_switch_runs_each_tick_cancels_entries_and_pauses_trading(h):
+    await h.engine.open_position(SIGNAL)  # a buy resting on the exchange
+    h.session.add(Position(
+        symbol="BTCUSDT", status=PositionStatus.CLOSED, take_profit_pct=D("0.04"), stop_loss_pct=D("0.02"),
+        realized_pnl_usd=D("-0.60"), closed_at=h.clock.now - timedelta(hours=1),
+    ))
+    await h.session.flush()
+
+    await h.engine.tick()
+
+    buy = await h.buy()
+    event = (await h.session.scalars(select(KillSwitchEvent))).one()
+    assert buy.status == OrderStatus.CANCELED and buy.cancel_reason == CancelReason.KILL_SWITCH
+    assert buy.kill_switch_event_id == event.id  # the cancelled order points at why
+    sol = (await h.session.scalars(select(Position).where(Position.symbol == "SOLUSDT"))).one()
+    assert sol.status == PositionStatus.CANCELLED  # (the newest position is the injected loss, not this one)
+    assert "kill_switch" in h.obs.kinds()
+    assert await h.engine.open_position(SIGNAL) is None  # and no new entry while paused
+    state = await h.session.get(BotState, 1)
+    assert state.trading_paused_until == event.resume_at
 
 
 async def test_an_oco_cancelled_by_the_owner_is_flagged_not_silently_replaced(h):

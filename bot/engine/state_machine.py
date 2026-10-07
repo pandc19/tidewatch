@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import Counter
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ from bot.database.models import (
     CancelReason,
     DailyPnl,
     ExitReason,
+    KillSwitchEvent,
     Order,
     OrderSide,
     OrderStatus,
@@ -54,7 +56,7 @@ from bot.services.binance_client import (
     OrderRejected,
 )
 from bot.services.reconciliation import LIVE, reconcile, sync_order
-from bot.services.risk_manager import size_entry
+from bot.services.risk_manager import KillSwitch, size_entry
 from bot.services.user_stream import OrderEvent
 
 log = logging.getLogger(__name__)
@@ -64,6 +66,8 @@ SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 ACTIVE = (PositionStatus.PENDING_ENTRY, PositionStatus.OPEN)
 DEAD = (OrderStatus.CANCELED, OrderStatus.EXPIRED, OrderStatus.REJECTED)
 
+# Client-order-id prefix of the order rows we create for sales the owner made by hand.
+MANUAL_PREFIX = "manual-"
 # Binance's "price relationship" refusal (e.g. take-profit already below the market).
 PRICE_RELATIONSHIP_ERROR = -2010
 # How far above the best ask a bumped take-profit is placed so it rests as a maker order.
@@ -116,6 +120,7 @@ class EngineObserver:
     async def exit_placed(self, position: Position, take_profit: Order, stop_loss: Order) -> None: ...
     async def trade_closed(self, position: Position, result: TradeResult) -> None: ...
     async def attention(self, message: str) -> None: ...
+    async def kill_switch(self, event: KillSwitchEvent) -> None: ...
 
 
 def _utcnow() -> datetime:
@@ -141,6 +146,17 @@ class TradingEngine:
         self._clock = clock
         self._lock = asyncio.Lock()
         self._attention_keys: set[str] = set()
+        self._last_exit_attempt: dict = {}
+        # The hard circuit breaker. It runs inside the tick, which already holds the lock, so it
+        # is given the lock-free cancel.
+        self._kill_switch = KillSwitch(
+            settings=settings,
+            exchange=exchange,
+            session_factory=session_factory,
+            cancel_entries=self._cancel_pending_entries,
+            notify=self._observer.kill_switch,
+            clock=clock,
+        )
         # Set when reconciliation finds something it cannot explain; blocks new entries.
         self.trading_blocked: str | None = None
 
@@ -153,6 +169,7 @@ class TradingEngine:
     async def tick(self) -> None:
         """Periodic work: re-read live orders, entry timeouts, safety net, then a new entry if allowed."""
         async with self._lock:
+            await self._safe(self._kill_switch.check(), "checking the kill-switch")
             await self._safe(self._sync_live_orders(), "re-reading live orders")
             await self._safe(self._check_timeouts(), "checking entry timeouts")
             for position_id in await self._active_position_ids():
@@ -194,25 +211,31 @@ class TradingEngine:
         detail: str,
         kill_switch_event_id=None,
     ) -> None:
-        """Cancel every unfilled entry buy (the kill-switch, phase 4). Never sells anything."""
+        """Cancel every unfilled entry buy. Never sells anything."""
         async with self._lock:
-            async with self._sessions() as session:
-                ids = (
-                    await session.scalars(
-                        select(Order.id)
-                        .join(Position)
-                        .where(
-                            Order.side == OrderSide.BUY,
-                            Order.status.in_(LIVE),
-                            Position.status == PositionStatus.PENDING_ENTRY,
-                        )
+            await self._cancel_pending_entries(reason, detail, kill_switch_event_id)
+
+    async def _cancel_pending_entries(
+        self, reason: CancelReason, detail: str, kill_switch_event_id=None
+    ) -> None:
+        """The same, for callers that already hold the lock (the tick, so the kill-switch)."""
+        async with self._sessions() as session:
+            ids = (
+                await session.scalars(
+                    select(Order.id)
+                    .join(Position)
+                    .where(
+                        Order.side == OrderSide.BUY,
+                        Order.status.in_(LIVE),
+                        Position.status == PositionStatus.PENDING_ENTRY,
                     )
-                ).all()
-            for order_id in ids:
-                await self._safe(
-                    self._cancel_entry(order_id, reason, detail, kill_switch_event_id),
-                    f"cancelling entry {order_id}",
                 )
+            ).all()
+        for order_id in ids:
+            await self._safe(
+                self._cancel_entry(order_id, reason, detail, kill_switch_event_id),
+                f"cancelling entry {order_id}",
+            )
 
     # ------------------------------------------------------------------------------- entry
 
@@ -358,6 +381,8 @@ class TradingEngine:
             await self._close(position_id, filled.id)
         elif live:
             return
+        elif await self._detect_manual_sale(position_id):
+            return  # the owner sold it by hand: the position is now closed
         elif not sells or all_rejected:
             await self._place_exit(position_id)  # never placed, or refused last time: try again
         else:
@@ -368,6 +393,71 @@ class TradingEngine:
                 f"position {position_id} is OPEN but its exit orders were cancelled outside the bot",
             )
 
+    async def _detect_manual_sale(self, position_id) -> bool:
+        """True if the owner sold this position by hand, in which case it has been closed.
+
+        Looks for sells in the account's trade history that none of our orders explain. A
+        partial manual sale is only flagged, never guessed at.
+        """
+        if self._exchange.dry_run:
+            return False
+        async with self._sessions() as session:
+            position = await self._load(session, position_id)
+            symbol, held = position.symbol, position.quantity
+            since = position.opened_at or position.created_at
+            ours = {o.binance_order_id for o in position.orders if o.binance_order_id}
+        try:
+            filters = await self._exchange.symbol_filters(symbol)
+            trades = await self._exchange.recent_trades(symbol, since)
+        except ExchangeError:
+            log.exception("could not look for a manual sale of %s", symbol)
+            return False
+        sells = [t for t in trades if not t.is_buyer and t.order_id not in ours]
+        sold = sum((t.quantity for t in sells), Decimal(0))
+        if sold <= 0:
+            return False
+        if sold < held - filters.step_size:
+            await self._attention_once(
+                f"{position_id}:partial-manual-sale",
+                f"{symbol}: you sold {sold} of the {held} the bot holds. Partial manual sales are not "
+                "handled automatically; sell or protect the rest yourself",
+            )
+            return False
+
+        # Book exactly the position's quantity, even if the owner also sold coins of their own.
+        quantity = min(sold, held)
+        share = quantity / sold
+        fees: Counter[str] = Counter()
+        for t in sells:
+            fees[t.commission_asset] += t.commission * share
+        fee_asset, fee_amount = fees.most_common(1)[0] if fees else (None, Decimal(0))
+        order_ids = sorted({t.order_id for t in sells})
+        average = sum((t.price * t.quantity for t in sells), Decimal(0)) / sold
+        async with self._sessions() as session:
+            order = Order(
+                position_id=position_id,
+                symbol=symbol,
+                binance_order_id=order_ids[0],
+                client_order_id=f"{MANUAL_PREFIX}{order_ids[0]}",
+                side=OrderSide.SELL,
+                order_type=OrderType.LIMIT,  # the real type is unknown; not used for manual sales
+                status=OrderStatus.FILLED,
+                target_price=average,
+                quantity=quantity,
+                filled_qty=quantity,
+                avg_fill_price=average,
+                commission=fee_amount,
+                commission_asset=fee_asset,
+                filled_at=max(t.time for t in sells),
+                cancel_detail=f"sold outside the bot (exchange orders {', '.join(map(str, order_ids))})",
+            )
+            session.add(order)
+            await session.flush()
+            order_id = order.id
+        log.warning("%s: sold by hand (%s at %s average). Closing the position.", symbol, quantity, average)
+        await self._close(position_id, order_id)
+        return True
+
     # ------------------------------------------------------------------------------- exit
 
     async def _place_exit(self, position_id) -> None:
@@ -377,26 +467,60 @@ class TradingEngine:
                 return
             symbol, entry, held = position.symbol, position.entry_price, position.quantity
             tp_pct, sl_pct = position.take_profit_pct, position.stop_loss_pct
+            was_refused = any(
+                o.side == OrderSide.SELL and o.status == OrderStatus.REJECTED for o in position.orders
+            )
+
+        now = self._clock()
+        last = self._last_exit_attempt.get(position_id)
+        retry_gap = timedelta(seconds=self._settings.exit_retry_seconds)
+        if was_refused and last is not None and now - last < retry_gap:
+            return  # refused a moment ago: not again on every tick
+        self._last_exit_attempt[position_id] = now
 
         filters = await self._exchange.symbol_filters(symbol)
         quantity = await self._exit_quantity(held, filters)
+        if quantity < filters.min_qty:
+            await self._attention_once(
+                f"{position_id}:nothing-to-sell",
+                f"position {position_id} ({symbol}) is OPEN but there is nothing to sell "
+                f"(the free balance covers only {quantity}); check your balance",
+            )
+            return
         take_profit = filters.round_price(entry * (1 + tp_pct))
         stop = filters.round_price(entry * (1 - sl_pct))
         stop_limit = filters.round_price(stop * (1 - self._settings.stop_limit_offset_pct))
+        planned_stop, rebased_stop = stop, None
 
-        base_id = self._exchange.new_client_order_id(reserve=3)
-        async with self._sessions() as session:  # persist before sending
-            tp_row = Order(
-                position_id=position_id, symbol=symbol, client_order_id=f"{base_id}-tp",
-                side=OrderSide.SELL, order_type=OrderType.LIMIT_MAKER, status=OrderStatus.NEW,
-                target_price=take_profit, quantity=quantity,
+        # Persist before sending. The pair refused last time is reused, so retrying never piles
+        # up rows.
+        async with self._sessions() as session:
+            position = await self._load(session, position_id)
+            refused = sorted(
+                (o for o in position.orders if o.side == OrderSide.SELL and o.status == OrderStatus.REJECTED),
+                key=lambda o: o.placed_at,
             )
-            sl_row = Order(
-                position_id=position_id, symbol=symbol, client_order_id=f"{base_id}-sl",
-                side=OrderSide.SELL, order_type=OrderType.STOP_LOSS_LIMIT, status=OrderStatus.NEW,
-                target_price=stop_limit, stop_price=stop, quantity=quantity,
-            )
-            session.add_all([tp_row, sl_row])
+            tp_row = next((o for o in reversed(refused) if o.order_type == OrderType.LIMIT_MAKER), None)
+            sl_row = next((o for o in reversed(refused) if o.order_type == OrderType.STOP_LOSS_LIMIT), None)
+            if tp_row is not None and sl_row is not None:
+                base_id = tp_row.client_order_id.removesuffix("-tp")
+                for row in (tp_row, sl_row):
+                    row.status, row.cancel_detail, row.quantity = OrderStatus.NEW, None, quantity
+                tp_row.target_price = take_profit
+                sl_row.target_price, sl_row.stop_price = stop_limit, stop
+            else:
+                base_id = self._exchange.new_client_order_id(reserve=3)
+                tp_row = Order(
+                    position_id=position_id, symbol=symbol, client_order_id=f"{base_id}-tp",
+                    side=OrderSide.SELL, order_type=OrderType.LIMIT_MAKER, status=OrderStatus.NEW,
+                    target_price=take_profit, quantity=quantity,
+                )
+                sl_row = Order(
+                    position_id=position_id, symbol=symbol, client_order_id=f"{base_id}-sl",
+                    side=OrderSide.SELL, order_type=OrderType.STOP_LOSS_LIMIT, status=OrderStatus.NEW,
+                    target_price=stop_limit, stop_price=stop, quantity=quantity,
+                )
+                session.add_all([tp_row, sl_row])
             await session.flush()
             tp_id, sl_id = tp_row.id, sl_row.id
 
@@ -409,15 +533,24 @@ class TradingEngine:
                 break
             except OrderRejected as exc:
                 if attempt == 1 and exc.code == PRICE_RELATIONSHIP_ERROR:
-                    # The market already moved past the target while the buy was filling:
-                    # rest the take-profit just above the market instead of giving up.
+                    # The market moved past one of the two prices while the buy was filling.
                     ticker = await self._exchange.book_ticker(symbol)
                     floor = filters.round_price(ticker.ask * (1 + TP_BUMP_PCT), ROUND_UP)
                     if floor > take_profit:
+                        # Above the target: rest the take-profit just above the market.
                         log.warning("%s: take-profit %s is below the market, moving it to %s", symbol, take_profit, floor)
                         take_profit = floor
-                        async with self._sessions() as session:
-                            (await session.get(Order, tp_id)).target_price = take_profit
+                        await self._update_exit_prices(tp_id, sl_id, take_profit, stop, stop_limit)
+                        continue
+                    if stop >= ticker.bid:
+                        # Below the stop: Binance refuses a stop behind the market, which would
+                        # leave the coins unprotected. Put an emergency stop the usual distance
+                        # below the CURRENT price instead; it bounds the loss and the owner is told.
+                        stop = filters.round_price(ticker.bid * (1 - sl_pct))
+                        stop_limit = filters.round_price(stop * (1 - self._settings.stop_limit_offset_pct))
+                        rebased_stop = (stop, ticker.bid)
+                        log.warning("%s: price %s is past the stop %s, using an emergency stop at %s", symbol, ticker.bid, planned_stop, stop)
+                        await self._update_exit_prices(tp_id, sl_id, take_profit, stop, stop_limit)
                         continue
                 await self._mark_exit_failed(tp_id, sl_id, position_id, str(exc))
                 return
@@ -434,9 +567,23 @@ class TradingEngine:
             tp_row.binance_order_id, tp_row.order_list_id = placed.take_profit.order_id, placed.order_list_id
             sl_row.binance_order_id, sl_row.order_list_id = placed.stop_loss.order_id, placed.order_list_id
         log.info("exit placed: %s %s tp=%s stop=%s/%s", symbol, quantity, take_profit, stop, stop_limit)
+        if rebased_stop is not None:
+            new_stop, market = rebased_stop
+            await self._attention_once(
+                f"{position_id}:stop-rebased",
+                f"{symbol}: the price fell to {market}, already past your stop at {planned_stop}. "
+                f"A protective stop was placed at {new_stop} instead, so the loss from your entry at {entry} "
+                f"is now capped near {(entry - new_stop) / entry:.1%}. Sell or cancel it yourself if you prefer",
+            )
         await self._observer.exit_placed(
             await self._get_position(position_id), await self._get_order(tp_id), await self._get_order(sl_id)
         )
+
+    async def _update_exit_prices(self, tp_id, sl_id, take_profit, stop, stop_limit) -> None:
+        async with self._sessions() as session:
+            tp_row, sl_row = await session.get(Order, tp_id), await session.get(Order, sl_id)
+            tp_row.target_price = take_profit
+            sl_row.stop_price, sl_row.target_price = stop, stop_limit
 
     async def _exit_quantity(self, held: Decimal, filters: SymbolFilters) -> Decimal:
         """How much to sell: the position, plus any crumb of the coin lying around.
@@ -498,9 +645,12 @@ class TradingEngine:
                 return
             transition(position, PositionStatus.CLOSED)
             position.exit_price = result.sell_price
-            position.exit_reason = (
-                ExitReason.TAKE_PROFIT if sell.order_type == OrderType.LIMIT_MAKER else ExitReason.STOP_LOSS
-            )
+            if sell.client_order_id.startswith(MANUAL_PREFIX):
+                position.exit_reason = ExitReason.MANUAL
+            elif sell.order_type == OrderType.LIMIT_MAKER:
+                position.exit_reason = ExitReason.TAKE_PROFIT
+            else:
+                position.exit_reason = ExitReason.STOP_LOSS
             position.realized_pnl_usd = result.net_profit
             position.closed_at = result.sell_time
             session.add(
