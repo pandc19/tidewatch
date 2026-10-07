@@ -18,6 +18,8 @@ def _info(symbol, tick, min_price, max_price, step, min_qty, max_qty, **extra):
     """Mirrors the shape of one symbol in /api/v3/exchangeInfo (checked live 2026-10-06)."""
     return {
         "symbol": symbol,
+        "baseAsset": symbol.removesuffix("USDT"),
+        "quoteAsset": "USDT",
         "ocoAllowed": True,
         "filters": [
             {"filterType": "PRICE_FILTER", "minPrice": min_price, "maxPrice": max_price, "tickSize": tick},

@@ -5,12 +5,15 @@ Records every call so tests can assert what was (or was not) sent.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from binance.exceptions import BinanceAPIException
 
 SOL_INFO: dict[str, Any] = {
     "symbol": "SOLUSDT",
+    "baseAsset": "SOL",
+    "quoteAsset": "USDT",
     "status": "TRADING",
     "ocoAllowed": True,
     "filters": [
@@ -82,25 +85,89 @@ def trade_dict(trade_id: int, order_id: int, *, price: str, qty: str, commission
 
 
 class FakeBinance:
+    """Stateful: orders it accepts persist, fills and cancels move balances, OCO legs are linked."""
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.symbol_info: dict[str, Any] | None = SOL_INFO
         self.avg = "120.00000000"
         self.bid, self.ask = "120.41000000", "120.42000000"
-        self.balances = {"USDT": "16.00000000"}
+        self.balances: dict[str, str] = {"USDT": "16.00000000"}
         self.orders: dict[int, dict[str, Any]] = {}
         self.trades: dict[int, list[dict[str, Any]]] = {}
-        self.open: list[dict[str, Any]] = []
+        self.open: list[dict[str, Any]] | None = None  # None: computed from live orders
         self.raise_on: dict[str, Exception] = {}
-        self.oco_leg_ids: tuple[int, ...] = ()
+        self.raise_once: dict[str, list[Exception]] = {}  # consumed one per call
+        self.fee_rate = Decimal("0.001")
+        self.fill_on_create = False  # like the testnet: a buy at the ask fills at once
+        self._next_id, self._next_leg, self._next_list = 1000, 2000, 54
 
     def called(self, name: str) -> list[dict[str, Any]]:
         return [kw for n, kw in self.calls if n == name]
 
     def _rec(self, name: str, kw: dict[str, Any]) -> None:
         self.calls.append((name, kw))
+        if self.raise_once.get(name):
+            raise self.raise_once[name].pop(0)
         if name in self.raise_on:
             raise self.raise_on[name]
+
+    # --- test controls ---------------------------------------------------------------------
+
+    def balance(self, asset: str) -> Decimal:
+        return Decimal(self.balances.get(asset, "0"))
+
+    def _add(self, asset: str, amount: Decimal) -> None:
+        self.balances[asset] = str(self.balance(asset) + amount)
+
+    def fill(
+        self, order_id: int, *, price: str | None = None, qty: str | None = None,
+        fee: str | None = None, fee_asset: str | None = None,
+    ) -> None:
+        """Fill (or partly fill) an order, move balances, record the trade, update OCO siblings."""
+        o = self.orders[order_id]
+        base = o["symbol"].removesuffix("USDT")
+        price_d = Decimal(price or o["price"])
+        qty_d = Decimal(qty or o["origQty"])
+        already = Decimal(o["executedQty"])
+        total = already + qty_d
+        o["executedQty"] = str(total)
+        o["cummulativeQuoteQty"] = str(Decimal(o["cummulativeQuoteQty"]) + qty_d * price_d)
+        done = total >= Decimal(o["origQty"])
+        o["status"] = "FILLED" if done else "PARTIALLY_FILLED"
+        if o["side"] == "BUY":
+            fee_asset = fee_asset or base
+            fee_d = Decimal(fee) if fee is not None else (qty_d * self.fee_rate if fee_asset == base else qty_d * price_d * self.fee_rate)
+            self._add("USDT", -qty_d * price_d)
+            self._add(base, qty_d - (fee_d if fee_asset == base else 0))
+            if fee_asset != base:
+                self._add(fee_asset, -fee_d)
+        else:
+            fee_asset = fee_asset or "USDT"
+            fee_d = Decimal(fee) if fee is not None else qty_d * price_d * self.fee_rate
+            self._add(base, -qty_d)
+            self._add("USDT", qty_d * price_d - (fee_d if fee_asset == "USDT" else 0))
+        tid = 10_000 + sum(len(v) for v in self.trades.values()) + 1
+        self.trades.setdefault(order_id, []).append(
+            trade_dict(tid, order_id, price=str(price_d), qty=str(qty_d), commission=str(fee_d), asset=fee_asset)
+        )
+        if done and o["orderListId"] != -1:  # the other OCO leg is cancelled by the exchange
+            self._cancel_list(o["orderListId"], except_id=order_id, status=self.counterpart_status)
+
+    counterpart_status = "CANCELED"  # Binance's wording for the losing OCO leg is not confirmed
+
+    def cancel_externally(self, order_id: int) -> None:
+        """Someone cancels in the Binance app: no bot involved."""
+        o = self.orders[order_id]
+        if o["orderListId"] != -1:
+            self._cancel_list(o["orderListId"], status="CANCELED")
+        else:
+            o["status"] = "CANCELED"
+
+    def _cancel_list(self, list_id: int, *, status: str = "CANCELED", except_id: int | None = None) -> None:
+        for oid, o in self.orders.items():
+            if o["orderListId"] == list_id and oid != except_id and o["status"] in ("NEW", "PARTIALLY_FILLED"):
+                o["status"] = status
 
     # --- public
     async def get_symbol_info(self, symbol):
@@ -137,28 +204,44 @@ class FakeBinance:
     # --- orders
     async def create_order(self, **kw):
         self._rec("create_order", kw)
-        return order_dict(
-            1001, kw["newClientOrderId"], symbol=kw["symbol"], side=kw["side"], type_=kw["type"],
+        self._next_id += 1
+        o = order_dict(
+            self._next_id, kw["newClientOrderId"], symbol=kw["symbol"], side=kw["side"], type_=kw["type"],
             price=kw["price"], qty=kw["quantity"],
         )
+        self.orders[self._next_id] = o
+        if self.fill_on_create:
+            self.fill(self._next_id)
+        return dict(o)
 
     async def create_oco_order(self, **kw):
         self._rec("create_oco_order", kw)
-        legs = [
-            order_dict(2001, kw["aboveClientOrderId"], side="SELL", type_="LIMIT_MAKER",
-                       price=kw["abovePrice"], qty=kw["quantity"], list_id=55),
-            order_dict(2002, kw["belowClientOrderId"], side="SELL", type_="STOP_LOSS_LIMIT",
-                       price=kw["belowPrice"], stop_price=kw["belowStopPrice"], qty=kw["quantity"], list_id=55),
-        ]
-        return {"orderListId": 55, "listClientOrderId": kw["listClientOrderId"], "orderReports": legs}
+        self._next_list += 1
+        self._next_leg += 1
+        tp = order_dict(self._next_leg, kw["aboveClientOrderId"], side="SELL", type_="LIMIT_MAKER",
+                        price=kw["abovePrice"], qty=kw["quantity"], list_id=self._next_list)
+        self._next_leg += 1
+        sl = order_dict(self._next_leg, kw["belowClientOrderId"], side="SELL", type_="STOP_LOSS_LIMIT",
+                        price=kw["belowPrice"], stop_price=kw["belowStopPrice"], qty=kw["quantity"],
+                        list_id=self._next_list)
+        self.orders[tp["orderId"]], self.orders[sl["orderId"]] = tp, sl
+        return {"orderListId": self._next_list, "listClientOrderId": kw["listClientOrderId"],
+                "orderReports": [dict(tp), dict(sl)]}
 
     async def cancel_order(self, **kw):
         self._rec("cancel_order", kw)
-        if kw.get("orderId") in self.oco_leg_ids:  # an OCO leg: Binance answers with the whole list
-            legs = [order_dict(i, f"leg-{i}", status="CANCELED", list_id=55) for i in self.oco_leg_ids]
-            return {"orderListId": 55, "listStatusType": "ALL_DONE", "listOrderStatus": "ALL_DONE",
-                    "orders": [], "orderReports": legs}
-        return order_dict(kw.get("orderId", 1), "x", status="CANCELED")
+        o = self.orders.get(kw.get("orderId"))
+        if o is None:
+            return order_dict(kw.get("orderId", 1), "x", status="CANCELED")
+        if o["status"] not in ("NEW", "PARTIALLY_FILLED"):
+            raise api_error(-2011, "Unknown order sent.")  # what Binance says for a finished order
+        if o["orderListId"] != -1:  # cancelling one OCO leg cancels both; the reply is the list
+            self._cancel_list(o["orderListId"])
+            legs = [dict(x) for x in self.orders.values() if x["orderListId"] == o["orderListId"]]
+            return {"orderListId": o["orderListId"], "listStatusType": "ALL_DONE",
+                    "listOrderStatus": "ALL_DONE", "orders": [], "orderReports": legs}
+        o["status"] = "CANCELED"
+        return dict(o)
 
     async def get_order(self, **kw):
         self._rec("get_order", kw)
@@ -168,11 +251,13 @@ class FakeBinance:
             found = next((o for o in self.orders.values() if o["clientOrderId"] == kw["origClientOrderId"]), None)
         if found is None:
             raise api_error(-2013, "Order does not exist.")
-        return found
+        return dict(found)
 
     async def get_open_orders(self, **kw):
         self._rec("get_open_orders", kw)
-        return self.open
+        if self.open is not None:
+            return self.open
+        return [dict(o) for o in self.orders.values() if o["status"] in ("NEW", "PARTIALLY_FILLED")]
 
     async def get_my_trades(self, **kw):
         self._rec("get_my_trades", kw)

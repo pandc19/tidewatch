@@ -68,6 +68,8 @@ class PercentPriceBand:
 @dataclass(frozen=True)
 class SymbolFilters:
     symbol: str
+    base_asset: str
+    quote_asset: str
     tick_size: Decimal
     min_price: Decimal
     max_price: Decimal
@@ -103,6 +105,8 @@ class SymbolFilters:
 
         return cls(
             symbol=info["symbol"],
+            base_asset=info["baseAsset"],
+            quote_asset=info["quoteAsset"],
             tick_size=to_decimal(price["tickSize"]),
             min_price=to_decimal(price["minPrice"]),
             max_price=to_decimal(price["maxPrice"]),

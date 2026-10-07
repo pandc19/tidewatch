@@ -189,6 +189,7 @@ class Order(Base):
     )
     placed_at: Mapped[datetime] = _timestamptz(server_default=func.now())
     expires_at: Mapped[datetime | None] = _timestamptz()
+    filled_at: Mapped[datetime | None] = _timestamptz()  # exchange time of the last fill
     updated_at: Mapped[datetime] = _timestamptz(server_default=func.now(), onupdate=func.now())
 
     position: Mapped[Position] = relationship(back_populates="orders")

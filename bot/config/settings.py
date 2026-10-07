@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     daily_loss_limit_pct: Decimal = Field(default=Decimal("0.03"), gt=0, lt=1)
     kill_switch_cooldown_hours: int = Field(default=24, ge=1)
 
+    # Engine: how often it checks entry timeouts, unprotected positions and new entries.
+    engine_tick_seconds: int = Field(default=30, ge=1)
+
     # Notifications
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""

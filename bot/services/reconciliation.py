@@ -105,6 +105,8 @@ async def sync_order(
         if sum((f.quantity for f in fills), Decimal(0)) != ex.executed_qty:
             log.warning("fills for %s do not add up to executed qty yet; fee may be incomplete", ex.order_id)
         _apply_commission(order, fills)
+        if fills:
+            order.filled_at = max(f.time for f in fills)
 
     if new_status in CANCELLED and order.cancel_reason is None:
         if cancel_reason is not None:

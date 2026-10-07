@@ -205,9 +205,11 @@ async def test_cancel_returns_none_when_already_gone():
 async def test_cancelling_one_oco_leg_returns_that_leg_not_a_crash():
     # Real testnet behaviour (2026-10-06): the reply describes the whole list, and both legs cancel.
     ex, fake = make()
-    fake.oco_leg_ids = (2001, 2002)
-    leg = await ex.cancel_order("SOLUSDT", order_id=2002)
-    assert leg.order_id == 2002 and leg.status == "CANCELED" and leg.order_list_id == 55
+    oco = await ex.place_oco_sell("SOLUSDT", **OCO)
+    leg = await ex.cancel_order("SOLUSDT", order_id=oco.stop_loss.order_id)
+    assert leg.order_id == oco.stop_loss.order_id and leg.status == "CANCELED"
+    assert leg.order_list_id == oco.order_list_id
+    assert fake.orders[oco.take_profit.order_id]["status"] == "CANCELED"  # the other leg went too
 
 
 async def test_a_refused_order_is_order_rejected_with_the_code():
