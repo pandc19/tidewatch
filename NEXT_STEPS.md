@@ -1,14 +1,14 @@
 # Next Steps
 
-Pending items only. When something is built or resolved, delete it from this file.
+Pending items only. When something is built or resolved, delete it from this file. What *you* must set up (keys, Telegram, database, server) is in [SETUP_CHECKLIST.md](SETUP_CHECKLIST.md).
 
-Last updated 2026-10-06, during phase 5 (CSV export built; Telegram alerts not).
+Last updated 2026-10-06, during phase 5 (CSV export and Telegram alerts built; real Telegram unverified).
 
 ---
 
-## Blocked: the Telegram module
+## Verify Telegram against the real API
 
-My response containing `bot/services/notifications.py` (the Telegram sender plus the message formatting) was stopped by a safety classifier before anything was written. I don't know what in it triggered the stop, so I have not retried it. Without it, alerts exist only as CRITICAL log lines. Tell me how you want to proceed: for example you write or supply the sender yourself and I wire it to the existing hooks and test it, or you pick a different alert channel.
+The alerts are built and tested against a local server that imitates the Bot API; they have **not** been sent to real Telegram. Create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`, run `python -m bot.services.notifications --find-chat-id`, set `TELEGRAM_CHAT_ID`, then `--test` and `python -m bot.main --check-only`. Also check on a testnet run that the HTML renders as intended (tables aligned in the `<pre>` blocks).
 
 ---
 
@@ -43,7 +43,6 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 
 | Topic | Decision |
 |---|---|
-| Notifications | **Not built.** Telegram only (the Bot API is free), as an `EngineObserver` that queues messages and sends them from a background worker (a slow network must never stall the engine). Built and ready for it: the engine's hooks (entry placed/cancelled, exit placed, trade closed, needs attention, kill-switch, reminder, protected again), the 15-minute reminders while a position is unprotected (`UNPROTECTED_REMINDER_MINUTES`), and readable alert text. Missing: the message formatting and the Telegram sender. My attempt to write that module was stopped by a safety check, see below |
 | Deployment | docker-compose on a DigitalOcean droplet, with an external managed PostgreSQL (connection string only; compose creates no database) |
 
 ---
@@ -57,7 +56,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 - **Widen or tune the 2% stop** once there is real trade history.
 - **Shorter buy timeout.** With one position, an unfilled buy locks the whole wallet for up to 3 days.
 - **WhatsApp or another alert channel.**
-- **Telegram commands.** Two-way control from the chat, for example `/status`, `/pause`, `/resume`, cancel the open buy, sell the open position now. Must only obey the owner's chat ID. The first version sends notifications only.
+- **Telegram commands.** Two-way control from the chat, for example `/status`, `/pause`, `/resume`, cancel the open buy, sell the open position now. Must only obey the owner's chat ID. Today the bot only sends notifications (ADR-007).
 - **Partial manual sales and partial fills of an exit leg** are flagged or waited out; no special handling.
 
 ---
@@ -75,5 +74,5 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 
 ## Build order
 
-5. Notifications: the Telegram sender and message formatting (the CSV tax export and the engine-side reminders are done).
+5. Notifications: done except verifying against real Telegram (see above).
 6. Deployment: verify the Dockerfile, compose and droplet guide on a real droplet.

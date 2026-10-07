@@ -56,7 +56,7 @@ These match the `DATABASE_URL` in `.env.example`. Change both together if you pi
 ## 5. Verify
 
 ```bash
-.venv/bin/pytest                # 274 tests; schema and reconciliation tests need the database
+.venv/bin/pytest                # 319 tests; schema and reconciliation tests need the database
 .venv/bin/python -m bot.main --check-only    # startup checks, then exits
 .venv/bin/python -m bot.main                 # startup checks, then the engine runs until Ctrl+C
 ```
@@ -64,6 +64,18 @@ These match the `DATABASE_URL` in `.env.example`. Change both together if you pi
 ## 6. Binance testnet keys (optional until phase 3)
 
 Public data (filters, prices) needs no keys, so steps 1-5 work without them. To exercise signed calls and the account stream, create testnet keys at https://testnet.binance.vision and put them in `.env` (`BINANCE_API_KEY`, `BINANCE_API_SECRET`). An ordinary HMAC key works for the account stream on the testnet (checked 2026-10-06), even though Binance's docs mention Ed25519. If your account ever refuses it, create an Ed25519 key and set `BINANCE_PRIVATE_KEY_PATH`. With keys set, `python -m bot.main` also logs your fee rate and balance and reconciles stored orders. Keep `DRY_RUN=true` until you want to test with fake money: no order is sent either way, and with keys set the scanner looks for entries; in dry-run it records the intended buy and times it out after `ENTRY_TIMEOUT_DAYS` without sending anything.
+
+## 7. Telegram alerts (optional)
+
+Without this the bot works and alerts are log lines only. To get them on your phone:
+
+1. In Telegram, open **@BotFather**, send `/newbot`, pick a name and a username. BotFather replies with a **token** (looks like `123456789:AA...`). Treat it like a password: anyone with it can send messages as your bot. Never paste it into a chat, a ticket or a commit.
+2. Put it in `.env` as `TELEGRAM_BOT_TOKEN=...`.
+3. Open your new bot in Telegram, press **Start** and send it any message. A bot cannot message you first.
+4. Run `.venv/bin/python -m bot.services.notifications --find-chat-id`. It prints the id and name of each chat that recently messaged the bot (never the token). Put your id in `.env` as `TELEGRAM_CHAT_ID=...`. If it finds nothing, send the bot another message and run it again.
+5. Run `.venv/bin/python -m bot.services.notifications --test`. A test message should arrive. `python -m bot.main --check-only` sends one too and reports the result in the log.
+
+Every alert starts with `[LIVE]`, `[TESTNET]` or `[DRY RUN]` so a practice alert cannot be mistaken for real money. If Telegram is down the bot keeps trading; failed alerts are logged.
 
 ## Running in Docker
 
@@ -91,4 +103,6 @@ One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and
 |---|---|
 | Schema tests are skipped | No database at `DATABASE_URL`. Do step 3 and 4 |
 | `role "trading_bot_app" does not exist` | Step 3 was run against a different Postgres than the one on port 5432 |
+| `Telegram refused sendMessage: 401` | Wrong `TELEGRAM_BOT_TOKEN` |
+| `Telegram refused sendMessage: 400 ... chat not found` | Wrong `TELEGRAM_CHAT_ID`, or you never sent the bot a message (step 3 of section 7) |
 | `Bad CPU type in executable` from uv | uv picked an Intel-only Python. Run `uv sync --python 3.12` so uv manages its own |

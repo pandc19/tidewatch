@@ -9,6 +9,8 @@
 | Lint | `.venv/bin/ruff check .` |
 | Apply migrations | `.venv/bin/alembic upgrade head` |
 | Run | `.venv/bin/python -m bot.main` |
+| Find your Telegram chat id | `.venv/bin/python -m bot.services.notifications --find-chat-id` |
+| Send a Telegram test message | `.venv/bin/python -m bot.services.notifications --test` |
 
 ## Rules that matter
 
@@ -33,6 +35,7 @@
 - Unit tests (`test_precision.py`, `test_settings.py`, `test_binance_client.py`, `test_user_stream.py`) need nothing.
 - `tests/fakes.py` has `FakeBinance`, a stateful stand-in for python-binance's client: orders it accepts persist, `fill()`/`cancel_externally()` move balances and cancel the other OCO leg, and every call is recorded so tests can assert what was (or was not) sent. Add new endpoints there, copying real response shapes.
 - `tests/test_engine.py` drives whole trades against the real database and that fake. The engine takes a `session_factory`, so tests hand it the shared rolled-back session. When you change engine behaviour, break it on purpose once and check a test fails.
+- `tests/test_telegram_notifier.py` runs `TelegramNotifier` against a local aiohttp server that imitates the Bot API (real HTTP): requests, 429, 4xx, 5xx, timeouts and token hygiene. `tests/test_notifications.py` covers message text, the queue and the engine with a notifier attached. Nothing in the suite talks to real Telegram.
 - Schema and reconciliation tests run against the real migrated PostgreSQL inside a transaction that is rolled back (`tests/conftest.py`), and skip if no database is reachable.
 - Fixtures for Binance filters mirror live `exchangeInfo` responses. When adding one, copy a real response instead of inventing values.
 
@@ -40,10 +43,11 @@
 
 - **A different entry signal:** change `evaluate_signal` in `scanner.py` (a pure function of closing prices, easy to test with hand-built series; start from `tests/test_scanner.py`). The scanner already ranks, spread-filters and picks. Replay it on history before trusting it (the replay in ADR-006 is a few lines against public candles).
 - **An entry strategy:** implement `EntrySource.next_entry()` (returns an `EntrySignal` with the symbol and limit price, or None). The engine does the gating, sizing, persisting and protecting; the source only decides *what* to buy.
-- **A notification:** subclass `EngineObserver` (hooks: entry placed/cancelled, exit placed, trade closed, needs attention, kill-switch tripped, reminder, protected again). A notification must only enqueue: the engine holds its lock while calling a hook, so a slow network call there would stall trade handling and pass it to `TradingEngine`.
+- **A notification:** subclass `EngineObserver` (hooks: entry placed/cancelled, exit placed, trade closed, needs attention, kill-switch tripped, reminder, protected again). A notification must only enqueue: the engine holds its lock while calling a hook, so a slow network call there would stall trade handling. `NotificationService` in [notifications.py](../../bot/services/notifications.py) is the working example (queue, background worker, hooks that never raise); pass it to `TradingEngine(observer=...)`.
 
 - **A setting:** add the field with validation to `Settings`, add it to `.env.example`, add a case to `tests/test_settings.py`.
-- **A new alert channel (planned):** implement the notification interface in `services/notifications.py`. The engine must only talk to the interface.
+- **A new alert channel:** subclass `Notifier` (an async `send(text)` and `close()`) in `services/notifications.py` and hand it to `NotificationService`; the queue, formatting and mode label come for free. The engine only ever talks to `EngineObserver`. Messages are Telegram HTML, so another channel may need its own formatter.
+- **Never put the Telegram token in a log, an error or a message.** It is part of the request URL, so `TelegramNotifier` raises `NotifierError` with scrubbed text and no chained aiohttp error; keep it that way.
 - **A new strategy (planned):** the scanner returns ranked candidates; keep entry sizing and risk checks outside it.
 
 ## Facts checked vs assumed

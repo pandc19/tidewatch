@@ -3,6 +3,7 @@
 ## Start here
 
 - [GETTING_STARTED.md](../GETTING_STARTED.md): local setup
+- [SETUP_CHECKLIST.md](../SETUP_CHECKLIST.md): every external piece to set up, in order, with how to check it and what is unverified
 - [guides/code-flow.md](guides/code-flow.md): how one trade moves through the system, and why
 - [guides/developer-guide.md](guides/developer-guide.md): conventions, tests, migrations, adding things
 
@@ -34,5 +35,6 @@ docs/
     ├── 003-safe-defaults-and-single-position.md
     ├── 004-stream-is-notification-rest-is-truth.md
     ├── 005-engine-evaluates-state.md
-    └── 006-risk-controls-and-the-entry-signal.md
+    ├── 006-risk-controls-and-the-entry-signal.md
+    └── 007-telegram-alerts-are-queued.md
 ```

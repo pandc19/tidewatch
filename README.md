@@ -2,7 +2,7 @@
 
 Automated Binance spot trader. It scans a list of USDT pairs, places one limit buy, protects the fill with an OCO exit (take-profit + stop-loss), and records every closed trade in a capital-gains ledger. Built for a small account (about $16 to start), one position at a time.
 
-> **Status: phase 4 of 6 (risk and scanner).** The Binance client, account stream, reconciliation, trading engine, entry scanner (RSI + EMA), spread filter and kill-switch exist and are tested against a fake exchange and the Binance testnet. **The entry signal is a placeholder: replayed on 250 days of history it did not beat the fees (ADR-006). Don't trade real money with it yet.** The CSV tax export is built (`python -m bot.reports.tax_exporter`); Telegram alerts are **not built yet**, so alerts are log lines only. Planned: Telegram (finish phase 5), droplet deployment (phase 6). `python -m bot.main` runs the startup checks and then the engine until Ctrl+C; `--check-only` stops after the checks.
+> **Status: phase 5 of 6 (notifications).** The Binance client, account stream, reconciliation, trading engine, entry scanner (RSI + EMA), spread filter and kill-switch exist and are tested against a fake exchange and the Binance testnet. **The entry signal is a placeholder: replayed on 250 days of history it did not beat the fees (ADR-006). Don't trade real money with it yet.** The CSV tax export is built (`python -m bot.reports.tax_exporter`); Telegram alerts are built (set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, see [GETTING_STARTED.md](GETTING_STARTED.md); without them alerts are log lines only), but not yet checked against real Telegram. Planned: droplet deployment (phase 6). `python -m bot.main` runs the startup checks and then the engine until Ctrl+C; `--check-only` stops after the checks.
 
 The app name is a setting (`APP_NAME`), so the project can be renamed later without touching code.
 
@@ -37,7 +37,7 @@ bot/
 │   │   ├── risk_manager.py       Entry sizing, spread filter, startup checks, kill-switch
 │   ├── scanner.py            RSI-oversold + EMA cross-up entry signal
 │   ├── indicators.py         RSI and EMA on Decimal closes
-│   └── notifications                                              (planned)
+│   └── notifications.py      Telegram alerts: queue, sender, message text
 ├── engine/
 │   ├── state_machine.py      Position state machine and trading engine
 │   ├── runner.py             Stream + tick loop, clean shutdown
@@ -53,6 +53,7 @@ docs/                     Guides, deployment, ADRs
 ## Documentation
 
 - [GETTING_STARTED.md](GETTING_STARTED.md): run it locally in a few minutes
+- [SETUP_CHECKLIST.md](SETUP_CHECKLIST.md): everything only you can set up (keys, Telegram, database, server) and the gate before real money
 - [docs/README.md](docs/README.md): index of all docs
 - [NEXT_STEPS.md](NEXT_STEPS.md): what is still pending
 
