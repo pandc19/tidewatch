@@ -129,10 +129,11 @@ class UserStream:
                         await self._pump(sock, stop, stopper)
                 except asyncio.CancelledError:
                     raise
-                except Exception:
+                except Exception as exc:
                     if connected_at is not None and self._clock() - connected_at >= self._healthy_after:
                         backoff = 1.0
-                    log.warning("user stream interrupted; reconnecting in %.0fs", backoff, exc_info=True)
+                    log.warning("user stream interrupted (%s: %s); reconnecting in %.0fs", type(exc).__name__, exc, backoff)
+                    log.debug("user stream failure detail", exc_info=True)
                     if not stop.is_set():
                         await self._sleep(backoff)
                     backoff = min(backoff * 2, self._max_backoff)
