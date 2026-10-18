@@ -33,4 +33,4 @@ uv sync --python 3.12
 
 ## Layout
 
-`bot/config` (settings, precision), `bot/database` (connection, models), `bot/services` (binance_client, user_stream, reconciliation, risk_manager, scanner, indicators), `bot/engine` (state_machine, runner, ledger), `bot/engine`, `bot/reports`, `migrations/`, `tests/`, `docs/`.
+`bot/config` (settings, precision), `bot/database` (connection, models), `bot/services` (binance_client, user_stream, reconciliation, risk_manager, scanner, indicators), `bot/engine` (state_machine, runner, ledger), `bot/engine`, `bot/reports`, `migrations/`, `scripts/` (local.sh, preflight.sh), `tests/`, `docs/`.

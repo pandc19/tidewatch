@@ -46,6 +46,8 @@ bot/
 │   └── tax_exporter.py   Export the tax ledger to CSV (per UTC year)
 └── main.py               Entrypoint
 migrations/               Alembic migrations
+scripts/local.sh          Run the bot on this machine in the background (start, stop, status, logs; `start demo` for a fast testnet tour)
+scripts/preflight.sh      Pre-flight checks to run on a server (never sends an order)
 tests/                    pytest (unit + schema tests against PostgreSQL)
 docs/                     Guides, deployment, ADRs
 ```

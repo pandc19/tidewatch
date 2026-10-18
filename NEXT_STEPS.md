@@ -67,7 +67,10 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 - Ask an accountant whether treating USDT as USD is acceptable for tax reporting, and how the swept leftover coin (under one quantity step, from an earlier trade) should be costed in `tax_ledger`.
 - Whether GTC/USDT keeps passing the 0.2% spread filter. One snapshot on 2026-10-06 showed 0.04% (BTC, ETH, SOL, BNB, XRP were all under 0.01%); sample it over several days before relying on it.
 - Pick the managed database provider, then test the real connection: SSL (`sslmode` conversion is tested, a real server is not), a pooler endpoint vs the direct one (insight-engine found pooled Neon breaks asyncpg; the direct endpoint is the working choice), and that the DB user can create tables. The droplet guide has not been run anywhere.
-- Compose `restart` policy is `"no"`. Set `unless-stopped` when you decide the bot should run unattended (phase 6), after the decision above.
+- The restart policy is now `RESTART_POLICY` in `.env` (default `no`). Set `unless-stopped` when the bot should run unattended, after the signal decision above.
+- **Optional Postgres service in compose** for the free-server route (a separate opt-in file, so the default stays "no database in compose"). Needs your decision; until then `docs/deployment.md` explains running Postgres yourself.
+- **A heartbeat.** A crashed bot is silent until you look (the "stopped" message only comes from a clean shutdown). Options: a periodic "still running" alert, or a health check plus an external monitor.
+- **Run the real deployment once** (any server) and note what needed adjusting; also exercise the pre-flight script's "Binance refuses this server" and "live mode without keys" branches, which were written but not run.
 - Add `ruff` and `alembic check` to CI once there is a repository.
 
 ---

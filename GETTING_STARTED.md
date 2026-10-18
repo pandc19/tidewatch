@@ -77,6 +77,73 @@ Without this the bot works and alerts are log lines only. To get them on your ph
 
 Every alert starts with `[LIVE]`, `[TESTNET]` or `[DRY RUN]` so a practice alert cannot be mistaken for real money. If Telegram is down the bot keeps trading; failed alerts are logged.
 
+## 8. Run the whole bot on your machine, every feature on
+
+Everything runs locally: the scanner, the trading engine, Telegram alerts, the kill-switch, the exports. You need sections 1 to 5 done (and section 7 for Telegram alerts). One script manages it:
+
+```bash
+./scripts/local.sh start demo    # TESTNET ONLY. See the whole cycle in minutes
+./scripts/local.sh start         # use .env exactly as it is
+./scripts/local.sh status        # running? mode? last log lines
+./scripts/local.sh logs          # follow the log (Ctrl+C stops following, not the bot)
+./scripts/local.sh stop          # clean shutdown
+```
+
+It runs the startup checks first and refuses to start if they fail. It keeps the Mac awake while the bot runs (a sleeping bot is a stopped bot); closing the lid still sleeps the Mac unless it is on power with an external display. Logs go to `logs/bot.log` (gitignored, rotated at 10 MB).
+
+**Demo mode** forces the Binance **testnet** (fake money; it can never reach your real account) and changes only what is needed to make things happen fast: 1-minute candles, a loose RSI threshold so signals are frequent, a 0.3% take-profit and 0.25% stop-loss so trades close within minutes to hours, a tiny trade size (about $20 of fake money), and a 5-second tick. Each change is a normal setting, listed at the top of `scripts/local.sh`. You can add your own on the command line, for example `DAILY_LOSS_LIMIT_PCT=0.00001 ./scripts/local.sh start demo` makes the kill-switch trip on the first small loss so you can watch it.
+
+What to look for, and where:
+
+| Feature | What you see |
+|---|---|
+| Scanner | `entry signal: SOLUSDT RSI 31.2 ...` in the log |
+| Entry, fill, protection | the buy, the fill, and the take-profit + stop-loss pair (log, and Telegram if configured) |
+| Close and ledger | `trade closed ...`, then a row in the tax export |
+| Alerts | Telegram messages tagged `[TESTNET]` (or `[DRY RUN]`) |
+| Unprotected position | cancel the take-profit/stop-loss pair yourself (I tested this through the API) and you get "Needs your attention", then reminders |
+| Manual sale | sell the coins yourself, outside the bot (tested through the API), and the position closes as `MANUAL` |
+| Kill-switch | start with the tiny `DAILY_LOSS_LIMIT_PCT` above and wait for a losing trade |
+| Tax export | `python -m bot.reports.tax_exporter --year 2026` |
+
+**Keep test data and real data apart.** Testnet trades are stored in the same tables as real ones, and the tax export does not mark which is which. Use a **separate database** (a different `DATABASE_URL`) for anything real, so a CSV for your accountant can never contain fake-money trades.
+
+## 9. Rehearse production on the testnet
+
+Demo mode (section 8) is a quick tour, **not** a production run. To run the bot the way it would run for real, with only the money fake, use your real settings and the testnet, with `DRY_RUN=false` so real testnet orders are placed:
+
+```bash
+# .env (use a database of its own, see below)
+BINANCE_TESTNET=true
+DRY_RUN=false
+BINANCE_API_KEY=...            # testnet keys
+BINANCE_API_SECRET=...
+DATABASE_URL=...               # a database used only for the rehearsal
+TELEGRAM_BOT_TOKEN=...         # so you see the alerts you would see for real
+TELEGRAM_CHAT_ID=...
+ALLOCATION_PCT=0.0016          # the testnet wallet is 10,000 USDT: this makes each trade about $16
+DAILY_LOSS_LIMIT_PCT=0.00005   # 0.005% of 10,000 is about $0.50, the same share as 3% of a $16 wallet
+# leave everything else at its default: 4% take-profit, 2% stop-loss, 1-hour candles, RSI 30
+```
+
+then `./scripts/local.sh start`. The two scaling lines are what make it behave like your real $16 account: the same trade size, and a kill-switch that trips at the same *proportion* of the account.
+
+Expect it to be **slow**. With the real settings the scanner signalled about once every day or two in a 250-day replay on real prices, and a trade then needs a 4% rise or a 2% fall to close, which takes days. Leave it running for a few weeks and read the alerts.
+
+**What the testnet cannot tell you** (so a good rehearsal is still not proof of a good production run):
+
+| Testnet | Real Binance |
+|---|---|
+| Trading fees are **0** | About 0.1% per side. Real results will be roughly 0.2% per trade worse, and the coin fee that shrinks the quantity you can sell is never exercised |
+| Prices and liquidity roughly follow the real market but are not it | Real spreads, slippage and partial fills |
+| An account of 10,000 fake USDT, scaled down by the two lines above | A real wallet of about $16 |
+| A stop-loss or take-profit filling is rare to watch | The behaviour of the other OCO leg after a fill is unverified (see NEXT_STEPS.md) |
+| Your own machine | A server: firewall, region, restarts, a managed database |
+
+**Keep it apart from real data.** The rehearsal's trades go to the same tables as real ones, and the tax export does not mark which is which. Use a database of its own (for example create `trading_bot_testnet` next to `trading_bot_local`, as in section 3, and run `alembic upgrade head` against it), and use a different one for real money later.
+
+**For a closer match to a server**, run it in Docker instead: set `RESTART_POLICY=unless-stopped` and the database URL as the container sees it (`host.docker.internal` for Postgres on this Mac), then `docker compose up -d --build` and `docker compose logs -f app`. `./scripts/preflight.sh` checks that setup first. This is the same image and compose file a server would use.
+
 ## Running in Docker
 
 ```bash
@@ -86,7 +153,7 @@ docker compose run --rm \
   app
 ```
 
-The container applies migrations, then starts the bot. Compose never starts a database: PostgreSQL is always external, and `DATABASE_URL` is all the app needs. For production see [docs/deployment.md](docs/deployment.md).
+The container applies migrations, then starts the bot. Compose never starts a database: PostgreSQL is always external, and `DATABASE_URL` is all the app needs. For a server, see [docs/deployment.md](docs/deployment.md) and run `./scripts/preflight.sh` first.
 
 ## Export your trades
 

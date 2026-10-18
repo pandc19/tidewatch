@@ -34,6 +34,7 @@ Tick the boxes as you go. Work through the stages in order; do not skip ahead to
 
 - [x] Done. Keys from https://testnet.binance.vision in `BINANCE_API_KEY` / `BINANCE_API_SECRET`, with `BINANCE_TESTNET=true`.
 - Check: `python -m bot.main --check-only` logs your balance and "reconciled".
+- Run everything on your own machine: `./scripts/local.sh start demo` (testnet only, fast) or `./scripts/local.sh start`. See [GETTING_STARTED.md, section 8](GETTING_STARTED.md) for the quick demo and [section 9](GETTING_STARTED.md) to rehearse production on the testnet (your real settings, fake money). Use a **separate database** for real money: testnet trades are stored in the same tables and the tax export does not mark which is which.
 
 ## 3. Telegram alerts
 
@@ -64,14 +65,15 @@ Uses the real market and your real balance, but the bot refuses to send any orde
 
 ## 6. The server (Stage D): a DigitalOcean droplet
 
-Full guide: [docs/deployment.md](docs/deployment.md). **That guide has never been run anywhere**; expect to fix small things.
+Full runbook, including how to choose a host and a free-tier comparison: [docs/deployment.md](docs/deployment.md). The image and compose file are verified on a laptop for ARM and x86; **the server steps have never been run anywhere**, so expect to adjust. Pick a server **outside the United States** (Binance blocks US IPs) that never sleeps; most free platforms fail one of those two tests.
 
 - [ ] Create an Ubuntu 22.04 droplet, add your SSH key, disable password login, firewall allowing SSH only (the bot only makes outbound connections).
 - [ ] Install Docker Engine and the compose plugin.
-- [ ] `git clone` the repo, `cp .env.example .env`, fill it in (the table in section 9).
+- [ ] `git clone` the repo, `cp .env.example .env`, `chmod 600 .env`, fill it in (the table in section 9).
+- [ ] Run **`./scripts/preflight.sh`** and fix every FAIL line. It checks `.env`, that the database URL is not `localhost`, that Binance accepts this server, shows the IP to allow on your key, and runs the bot's own checks. It never sends an order.
 - [ ] Add the droplet's IP to the managed database's trusted sources (section 1) and to the Binance key's IP restriction (section 7).
 - [ ] `docker compose up -d --build`, then `docker compose logs -f app`.
-- [ ] When you are happy it should run unattended, change `restart: "no"` to `restart: unless-stopped` in `docker-compose.yml`.
+- [ ] When you are happy it should run unattended, set `RESTART_POLICY=unless-stopped` in `.env` and run `docker compose up -d` again (no need to edit the compose file).
 - [ ] Back up: the database (the provider's automatic backups, plus a `pg_dump` before every upgrade). The `tax_ledger` is your capital-gains record.
 - **Not verified:** the Dockerfile and compose file on a real server; the bot running for days; Binance reachable from the droplet's region.
 
