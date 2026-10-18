@@ -5,13 +5,20 @@ services:
   app:
     build: .
     env_file: .env
-    # Phase 1 exits after its startup checks. Switch to `unless-stopped` once the
-    # trading loop exists (phase 6).
-    restart: "no"
+    # "no" while you are testing; set RESTART_POLICY=unless-stopped in .env when the bot should
+    # run unattended and come back after a crash or a reboot.
+    restart: ${RESTART_POLICY:-no}
+    # A clean shutdown flushes queued alerts and closes the Binance stream, which takes up to
+    # about 20 seconds. Docker's default of 10 would kill it mid-way.
+    stop_grace_period: 40s
     extra_hosts:
       - "host.docker.internal:host-gateway" # reach a Postgres running on the host (local dev)
-    volumes:
-      - ./logs:/app/logs
+    # Logs only go to stdout. Rotate them so a long-running server's disk cannot fill up.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 # No database service on purpose: PostgreSQL is external (a local container in
-# development, a managed service in production). Point DATABASE_URL at it.
+# development, a managed service or your own Postgres in production). Point DATABASE_URL at it.
