@@ -32,7 +32,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 - **The kill-switch with real losing trades.** Tested against the real database with fabricated losses only.
 - **The re-based emergency stop** on the live exchange (needs a price that fell through the stop). Tested against a fake that raises Binance's refusal.
 - **An OCO leg actually filling** live: the counterpart's real status (`CANCELED` or `EXPIRED`) is tested against a fake only. Both are handled.
-- **Fee math.** The testnet's commission rates read 0. The real rate (0.1% per side is assumed) and the coin fee that shrinks the sellable quantity show up only with real trades.
+- **Fee math.** The testnet's commission rates read 0 until you set them to 0.1% maker and taker on 2026-10-19 (the startup check now logs 0.001; whether fills actually charge it, and in which asset, is not yet seen). The real rate (0.1% per side is assumed) and the coin fee that shrinks the sellable quantity show up only with real trades.
 - **Partial fills** live, and the stream dropping mid-trade. The account stream failed to subscribe for about 30 seconds once during testing ("Request timed out"); the engine kept working through its polling safety net and the stream reconnected with backoff. Worth watching how often it happens.
 - **Failed-subscription cleanup.** After a failed subscribe the library kept trying to reconnect in the background, and `close_connection()` takes about 10 seconds. Check that repeated failures don't leak sockets or duplicate subscriptions.
 - **Dry run simulates no fills**: a dry-run entry only records the intent and times out.

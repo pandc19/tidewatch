@@ -70,6 +70,8 @@ DATABASE_URL="<your TEST_DATABASE_URL>" .venv/bin/alembic upgrade head     # tid
 
 Do the same for `tidewatch_testnet` before the rehearsal. Run it again for each database after a new migration.
 
+To start a database over without dropping it, `.venv/bin/python scripts/reset_db.py local` (or `testnet`, `test`) deletes every row and keeps the schema. It is for this machine only: it refuses a non-local `DATABASE_URL` or a running bot, and asks you to type the database name. It does not touch the exchange: cancel any open testnet orders yourself first, or they are left orphaned.
+
 ## 5. Verify
 
 ```bash
