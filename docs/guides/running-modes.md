@@ -49,7 +49,7 @@ The engine takes a PostgreSQL advisory lock (`bot/instance.py`) before it does a
 - It is per database. Two bots on different databases are not stopped by it; use the rules above.
 - `--check-only` does not take the lock, so it runs alongside a running bot.
 - If the lock's connection is lost (a database restart), the engine stops with exit code 1 rather than keep trading without it.
-- Not yet seen end to end with a real container deploy; the lock and watcher are tested against a real PostgreSQL.
+- Seen with real containers on 2026-10-19 (keyless, dry-run, throwaway database): a second container waits and reports healthy; `docker stop` of the first takes about 1 s and the second takes over about 2 s later; a `kill -9` of the holder is taken over too; a waiter with a short limit exits 1. Not yet seen on Coolify.
 
 ## The heartbeat
 
