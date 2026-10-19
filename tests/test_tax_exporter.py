@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from bot.config.settings import get_settings
 from bot.database.models import ExitReason, Position, PositionStatus, TaxLedger
 from bot.reports.tax_exporter import COLUMNS, default_path, export, main
+from tests.conftest import _skip_or_fail, _test_database_url
 
 D = Decimal
 
@@ -107,12 +109,24 @@ def test_a_nonsense_year_is_refused_before_anything_is_written(year, capsys):
     assert err.value.code == 2
 
 
-def test_the_command_itself_writes_the_file_and_creates_the_folder(tmp_path, capsys):
+@pytest.fixture
+def command_database(monkeypatch):
+    """Point the command at the throwaway test database, never at the one the bot runs on."""
+    url = _test_database_url()
+    if not url:
+        _skip_or_fail("TEST_DATABASE_URL is not set")
+    monkeypatch.setenv("DATABASE_URL", url)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def test_the_command_itself_writes_the_file_and_creates_the_folder(tmp_path, capsys, command_database):
     out = tmp_path / "nested" / "tax.csv"
     try:
         code = main(["--year", "2001", "--out", str(out)])  # a year with no trades
     except OSError as exc:  # no database reachable here: nothing to test against
-        pytest.skip(f"PostgreSQL not reachable: {exc!r}")
+        _skip_or_fail(f"PostgreSQL not reachable: {exc!r}")
     assert code == 0
     assert out.read_text().splitlines() == [",".join(COLUMNS)]
     assert "wrote 0 trade(s)" in capsys.readouterr().err

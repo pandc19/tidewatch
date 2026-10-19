@@ -8,6 +8,13 @@ from bot.config.settings import get_settings, normalize_database_url
 from bot.database.connection import Database
 
 
+def _skip_or_fail(reason: str) -> None:
+    """Skip locally; fail in CI (GitHub sets CI=true) so a missing database cannot hide the tests."""
+    if os.environ.get("CI"):
+        pytest.fail(reason)
+    pytest.skip(reason)
+
+
 def _test_database_url() -> str | None:
     """TEST_DATABASE_URL from the environment (CI) or .env (local), never DATABASE_URL."""
     return os.environ.get("TEST_DATABASE_URL") or dotenv_values(".env").get("TEST_DATABASE_URL") or None
@@ -24,7 +31,7 @@ async def session():
     """
     raw = _test_database_url()
     if not raw:
-        pytest.skip("TEST_DATABASE_URL is not set (see GETTING_STARTED.md, step 3)")
+        _skip_or_fail("TEST_DATABASE_URL is not set (see GETTING_STARTED.md, step 3)")
     url = normalize_database_url(raw)
     if url == get_settings().database_url.get_secret_value():
         pytest.fail("TEST_DATABASE_URL must not be the same database as DATABASE_URL")
@@ -33,7 +40,7 @@ async def session():
         await db.ping()
     except Exception as exc:  # noqa: BLE001  any failure to connect means skip, not fail
         await db.dispose()
-        pytest.skip(f"PostgreSQL not reachable: {exc!r}")
+        _skip_or_fail(f"PostgreSQL not reachable: {exc!r}")
     async with db.engine.connect() as conn:
         outer = await conn.begin()
         s = AsyncSession(bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False)

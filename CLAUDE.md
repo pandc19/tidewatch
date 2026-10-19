@@ -2,6 +2,15 @@
 
 Automated Binance spot trading bot. Python 3.12, asyncio, SQLAlchemy + asyncpg, PostgreSQL, Alembic. Status: phase 5 of 6 (CSV export and Telegram alerts built; a test message verified on real Telegram 2026-10-19; trade alerts not yet seen); see [NEXT_STEPS.md](NEXT_STEPS.md) and [docs/README.md](docs/README.md).
 
+## Git workflow
+
+Full version in [docs/git-flow.md](docs/git-flow.md).
+
+- Never push to `main` (GitHub refuses it). Work on a branch named `type/short-description` (kebab-case) and open a PR; merges are squash merges.
+- Commit messages and PR titles: `type: short description`, max 72 chars, imperative, no period. Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `ci`. The PR title becomes the commit on `main`.
+- Before opening a PR run `.venv/bin/ruff check .` and `.venv/bin/pytest`; CI runs the same on a throwaway database.
+- After a squash merge, local `main` must match `origin/main`: `git switch main && git pull --prune`.
+
 ## Commands
 
 ```bash
