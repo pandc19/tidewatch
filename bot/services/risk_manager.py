@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config.precision import SymbolFilters
@@ -75,6 +76,20 @@ def spread_ok(spread_pct: Decimal, max_spread_pct: Decimal) -> bool:
 ROUND_TRIP_FEE = Decimal("0.002")
 
 
+def database_mismatch(settings: Settings) -> list[str]:
+    """Errors when the database name and the exchange disagree (testnet trades must not land in
+    a real-money database or the reverse; the tax export cannot tell them apart).
+
+    Only a guard on the names: it cannot know what an unnamed database holds.
+    """
+    name = (make_url(settings.database_url.get_secret_value()).database or "").lower()
+    if not settings.binance_testnet and "testnet" in name:
+        return [f"BINANCE_TESTNET=false (real exchange) but the database '{name}' is a testnet one"]
+    if settings.binance_testnet and any(word in name for word in ("prod", "live")):
+        return [f"BINANCE_TESTNET=true (fake money) but the database '{name}' looks like a real one"]
+    return []
+
+
 def config_problems(
     settings: Settings,
     filters: dict[str, SymbolFilters],
@@ -88,6 +103,7 @@ def config_problems(
     errors: list[str] = []
     warnings: list[str] = []
 
+    errors.extend(database_mismatch(settings))
     if settings.take_profit_pct <= ROUND_TRIP_FEE:
         errors.append(
             f"TAKE_PROFIT_PCT {settings.take_profit_pct} does not cover the ~{ROUND_TRIP_FEE} "

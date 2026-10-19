@@ -16,7 +16,7 @@ from bot.database.models import (
     PositionStatus,
 )
 from bot.services.binance_client import ExchangeClient
-from bot.services.risk_manager import KillSwitch, config_problems, spread_ok
+from bot.services.risk_manager import KillSwitch, config_problems, database_mismatch, spread_ok
 from tests.fakes import SOL_INFO, FakeBinance
 
 D = Decimal
@@ -211,3 +211,34 @@ async def test_an_empty_account_does_not_divide_by_zero(session):
     ks.fake.balances["USDT"] = "0"
     await ks.closed_trade("-1")
     assert await ks.switch.check() is None
+
+
+# --- database / exchange mismatch ---------------------------------------------------------
+
+
+def _db(name: str) -> str:
+    return f"postgresql+asyncpg://u:p@localhost:5432/{name}"
+
+
+@pytest.mark.parametrize(
+    ("testnet", "db", "bad"),
+    [
+        ("false", "tidewatch_testnet", True),  # real exchange into the testnet database
+        ("true", "tidewatch_prod", True),  # fake money into a real database
+        ("true", "tidewatch_live", True),
+        ("true", "tidewatch_testnet", False),
+        ("true", "tidewatch_local", False),
+        ("false", "tidewatch_prod", False),
+        ("false", "tidewatch_local", False),
+    ],
+)
+def test_database_name_must_agree_with_the_exchange(testnet, db, bad):
+    settings = cfg(BINANCE_TESTNET=testnet, DATABASE_URL=_db(db))
+    assert bool(database_mismatch(settings)) is bad
+
+
+def test_a_mismatch_stops_startup(market):
+    errors, _ = config_problems(
+        cfg(BINANCE_TESTNET="false", DATABASE_URL=_db("tidewatch_testnet")), *market, free_quote=D("16")
+    )
+    assert any("testnet" in e for e in errors)

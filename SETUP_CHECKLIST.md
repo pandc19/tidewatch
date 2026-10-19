@@ -11,7 +11,7 @@ Tick the boxes as you go. Work through the stages in order; do not skip ahead to
 | Stage | What it is | Money at risk | Status |
 |---|---|---|---|
 | **A** Local + Binance testnet | Develop and test with fake money | None | Done on your machine |
-| **B** Telegram alerts | Alerts on your phone | None | Built; **real Telegram not yet verified** |
+| **B** Telegram alerts | Alerts on your phone | None | Done; test message verified 2026-10-19 |
 | **C** Dry-run on real market data | Real prices and balance, never sends an order | None | Ready to try |
 | **D** Server + managed database | Run unattended on a DigitalOcean droplet | None (still dry-run) | **Not yet run anywhere** |
 | **E** Small live trades | Real orders with a small wallet | **Yes** | Blocked until the gate below passes |
@@ -40,12 +40,12 @@ Tick the boxes as you go. Work through the stages in order; do not skip ahead to
 
 Full steps with troubleshooting: [GETTING_STARTED.md, section 7](GETTING_STARTED.md). In short:
 
-- [ ] In Telegram, open **@BotFather**, send `/newbot`, pick a name. Copy the **token** into `.env` as `TELEGRAM_BOT_TOKEN`. Treat it like a password and never paste it into a chat or commit.
-- [ ] Open your new bot, press **Start**, send it any message (a bot cannot message you first).
-- [ ] Run `python -m bot.services.notifications --find-chat-id`, and put the id it prints in `.env` as `TELEGRAM_CHAT_ID`.
-- [ ] Check: `python -m bot.services.notifications --test` (or `python -m bot.main --check-only`) should put a message on your phone.
+- [x] In Telegram, open **@BotFather**, send `/newbot`, pick a name. Copy the **token** into `.env` as `TELEGRAM_BOT_TOKEN`. Treat it like a password and never paste it into a chat or commit.
+- [x] Open your new bot, press **Start**, send it any message (a bot cannot message you first).
+- [x] Run `python -m bot.services.notifications --find-chat-id`, and put the id it prints in `.env` as `TELEGRAM_CHAT_ID`.
+- [x] Check: `python -m bot.services.notifications --test` (or `python -m bot.main --check-only`) should put a message on your phone.
 - What you will get: buy placed, protection placed, trade closed, kill-switch, "needs attention", reminders every 15 minutes while a position has no stop-loss (`UNPROTECTED_REMINDER_MINUTES`), and started/stopped. Every message starts with `[TESTNET]`, `[DRY RUN]` or `[LIVE]`.
-- **Not verified:** a real Telegram delivery. The code is tested against a local imitation of Telegram's API only.
+- **Not verified:** how the trade alerts look on the phone (the `<pre>` tables); only the test message has been seen.
 
 ## 4. Decide the entry signal (a blocker for real money)
 
@@ -90,7 +90,7 @@ Full runbook, including how to choose a host and a free-tier comparison: [docs/d
 ## 8. Stage E gate: do not trade real money until all of these are true
 
 - [ ] The entry-signal decision (section 4) is made, and you accept what it says.
-- [ ] Telegram alerts verified on your phone (section 3).
+- [x] Telegram alerts verified on your phone (section 3): test message only; trade alerts still to be seen.
 - [ ] The server ran in dry-run (and/or on the testnet) for a few weeks without surprises, and you read the alerts it sent.
 - [ ] A real fee rate and balance appeared in the logs (section 5), and `--check-only` passes with no config warnings.
 - [ ] You understand what the bot does when things go wrong: it **never sells on its own**; if your exit orders are cancelled it alerts you and reminds you every 15 minutes; if the price falls through the stop it places an emergency stop below the current price; if you sell by hand it closes the position as `MANUAL`.

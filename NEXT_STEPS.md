@@ -2,13 +2,13 @@
 
 Pending items only. When something is built or resolved, delete it from this file. What *you* must set up (keys, Telegram, database, server) is in [SETUP_CHECKLIST.md](SETUP_CHECKLIST.md).
 
-Last updated 2026-10-06, during phase 5 (CSV export and Telegram alerts built; real Telegram unverified).
+Last updated 2026-10-19, during phase 5 (CSV export and Telegram alerts built; Telegram delivery verified, trade-alert layout not yet seen).
 
 ---
 
-## Verify Telegram against the real API
+## Telegram: trade alerts on a real run
 
-The alerts are built and tested against a local server that imitates the Bot API; they have **not** been sent to real Telegram. Create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`, run `python -m bot.services.notifications --find-chat-id`, set `TELEGRAM_CHAT_ID`, then `--test` and `python -m bot.main --check-only`. Also check on a testnet run that the HTML renders as intended (tables aligned in the `<pre>` blocks).
+The bot, token and chat ID work against real Telegram (`--test` arrived on the phone, 2026-10-19; wrong token and wrong chat ID fail cleanly without leaking the token). Still to check: `python -m bot.main --check-only` sending its message, and on a testnet run that the HTML renders as intended (tables aligned in the `<pre>` blocks).
 
 ---
 
@@ -32,7 +32,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 - **The kill-switch with real losing trades.** Tested against the real database with fabricated losses only.
 - **The re-based emergency stop** on the live exchange (needs a price that fell through the stop). Tested against a fake that raises Binance's refusal.
 - **An OCO leg actually filling** live: the counterpart's real status (`CANCELED` or `EXPIRED`) is tested against a fake only. Both are handled.
-- **Fee math.** The testnet's commission rates read 0. The real rate (0.1% per side is assumed) and the coin fee that shrinks the sellable quantity show up only with real trades.
+- **Fee math.** The testnet's commission rates read 0 until you set them to 0.1% maker and taker on 2026-10-19 (the startup check now logs 0.001; whether fills actually charge it, and in which asset, is not yet seen). The real rate (0.1% per side is assumed) and the coin fee that shrinks the sellable quantity show up only with real trades.
 - **Partial fills** live, and the stream dropping mid-trade. The account stream failed to subscribe for about 30 seconds once during testing ("Request timed out"); the engine kept working through its polling safety net and the stream reconnected with backoff. Worth watching how often it happens.
 - **Failed-subscription cleanup.** After a failed subscribe the library kept trying to reconnect in the background, and `close_connection()` takes about 10 seconds. Check that repeated failures don't leak sockets or duplicate subscriptions.
 - **Dry run simulates no fills**: a dry-run entry only records the intent and times out.
@@ -77,5 +77,5 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 
 ## Build order
 
-5. Notifications: done except verifying against real Telegram (see above).
+5. Notifications: done; delivery verified, trade-alert layout to be seen on a testnet run.
 6. Deployment: verify the Dockerfile, compose and droplet guide on a real droplet.

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Automated Binance spot trading bot. Python 3.12, asyncio, SQLAlchemy + asyncpg, PostgreSQL, Alembic. Status: phase 5 of 6 (CSV export and Telegram alerts built; alerts not yet checked against real Telegram); see [NEXT_STEPS.md](NEXT_STEPS.md) and [docs/README.md](docs/README.md).
+Automated Binance spot trading bot. Python 3.12, asyncio, SQLAlchemy + asyncpg, PostgreSQL, Alembic. Status: phase 5 of 6 (CSV export and Telegram alerts built; a test message verified on real Telegram 2026-10-19; trade alerts not yet seen); see [NEXT_STEPS.md](NEXT_STEPS.md) and [docs/README.md](docs/README.md).
 
 ## Commands
 
