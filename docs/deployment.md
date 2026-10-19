@@ -1,4 +1,6 @@
-# Deployment
+# Deployment (manual: docker compose on a server)
+
+> The planned route is Coolify, like poketrain: see [coolify.md](coolify.md) and [git-flow.md](git-flow.md). This page is the manual alternative, and its host comparison still applies.
 
 A runbook for running the bot on a server, unattended. **You do not have to deploy yet**: [SETUP_CHECKLIST.md](../SETUP_CHECKLIST.md) says when it makes sense.
 

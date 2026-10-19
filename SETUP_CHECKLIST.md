@@ -65,6 +65,8 @@ Uses the real market and your real balance, but the bot refuses to send any orde
 
 ## 6. The server (Stage D): a DigitalOcean droplet
 
+**Planned route: Coolify**, the same droplet and `shared-postgres` as poketrain. Steps and the dashboard checklist: [docs/coolify.md](docs/coolify.md). The steps below are the manual docker compose alternative.
+
 Full runbook, including how to choose a host and a free-tier comparison: [docs/deployment.md](docs/deployment.md). The image and compose file are verified on a laptop for ARM and x86; **the server steps have never been run anywhere**, so expect to adjust. Pick a server **outside the United States** (Binance blocks US IPs) that never sleeps; most free platforms fail one of those two tests.
 
 - [ ] Create an Ubuntu 22.04 droplet, add your SSH key, disable password login, firewall allowing SSH only (the bot only makes outbound connections).

@@ -1,24 +1,43 @@
-FROM python:3.12-slim
+# Built by Coolify on the droplet (push to main -> build -> deploy), and by `docker compose build`.
+# Stages: build (locked dependencies into a virtualenv) -> runner (the venv, migrations, no tools).
 
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
-
+FROM python:3.12-slim AS build
+# uv installs exactly what uv.lock says. Pinned, like the lockfile.
+COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /usr/local/bin/uv
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /app
+# Dependencies first, from the manifests alone, so this layer is rebuilt only when they change.
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+# Then the bot itself, installed (not editable) so the runner needs no source tree.
+COPY bot ./bot
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable
 
-# Dependencies first so code changes don't invalidate this layer.
-COPY pyproject.toml ./
-RUN mkdir bot && touch bot/__init__.py && pip install . && rm -rf bot
+FROM python:3.12-slim AS runner
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/opt/venv/bin:$PATH
 
+# Never run as root. Nothing is written to disk but the heartbeat file in /tmp: logs go to
+# stdout (the platform's log view, or docker compose logs).
+RUN useradd --create-home bot
+WORKDIR /app
+COPY --from=build /opt/venv /opt/venv
 COPY alembic.ini ./
 COPY migrations ./migrations
-COPY bot ./bot
-RUN pip install --no-deps .
-
-# Never run as root. Nothing is written to disk: logs go to stdout (docker compose logs).
-RUN useradd --create-home bot
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 USER bot
 
-# Apply pending migrations, then start the bot. `exec` makes Python the container's main process,
-# so `docker stop` (SIGTERM) reaches it and it shuts down cleanly (flushes alerts, closes the
-# Binance stream). Without it the shell would swallow the signal and Docker would SIGKILL after
-# the grace period.
-CMD ["sh", "-c", "alembic upgrade head && exec python -m bot.main"]
+# No port: the bot only makes outbound connections. Liveness is the heartbeat file the engine
+# touches every tick (bot/instance.py); a hung engine stops it and the container turns unhealthy.
+# The start period covers the migrations, the startup checks and, during a deploy, the new
+# container waiting for the old one to release the database (it keeps beating while it waits).
+HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=4 \
+  CMD python -m bot.instance --path "${HEARTBEAT_PATH:-/tmp/tidewatch-heartbeat}" --max-age "${HEARTBEAT_MAX_AGE_SECONDS:-180}"
+
+# SIGTERM reaches Python (the entrypoint execs it) and the bot shuts down cleanly: it flushes
+# alerts and closes the Binance stream, which takes up to about 20 seconds. Give the container
+# at least 40 seconds to stop (compose sets it; in Coolify see docs/coolify.md).
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["python", "-m", "bot.main"]

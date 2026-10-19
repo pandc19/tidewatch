@@ -43,7 +43,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 
 | Topic | Decision |
 |---|---|
-| Deployment | docker-compose on a DigitalOcean droplet, with an external managed PostgreSQL (connection string only; compose creates no database) |
+| Deployment | Coolify on the shared DigitalOcean droplet, built from the Dockerfile on every merge to `main` ([docs/coolify.md](docs/coolify.md)); PostgreSQL stays external (`shared-postgres`, connection string only). The manual docker compose route remains in docs/deployment.md |
 
 ---
 
@@ -78,4 +78,4 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 ## Build order
 
 5. Notifications: done; delivery verified, trade-alert layout to be seen on a testnet run.
-6. Deployment: verify the Dockerfile, compose and droplet guide on a real droplet.
+6. Deployment: Dockerfile, CI and git flow built; the Coolify application, its database and the first deploy (checklist at the bottom of docs/coolify.md) are still to do.

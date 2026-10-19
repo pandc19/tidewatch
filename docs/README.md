@@ -12,7 +12,8 @@
 
 ## Operations
 
-- [deployment.md](deployment.md): DigitalOcean droplet with docker-compose
+- [coolify.md](coolify.md): deploying with Coolify (the plan: push to `main` builds the Dockerfile and starts the bot)
+- [deployment.md](deployment.md): the manual route, a droplet with docker-compose
 
 ## Decisions
 
@@ -27,6 +28,7 @@
 ```
 docs/
 ├── README.md
+├── coolify.md
 ├── deployment.md
 ├── git-flow.md
 ├── guides/
