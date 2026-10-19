@@ -153,7 +153,7 @@ Expect it to be **slow**. With the real settings the scanner signalled about onc
 
 | Testnet | Real Binance |
 |---|---|
-| Trading fees are **0** | About 0.1% per side. Real results will be roughly 0.2% per trade worse, and the coin fee that shrinks the quantity you can sell is never exercised |
+| Trading fees were **0** until you set 0.1% maker and taker in the testnet settings (2026-10-19); a demo buy then paid 0.1% in the coin bought (ETH) | About 0.1% per side. Real results will be roughly 0.2% per trade worse, and the coin fee that shrinks the quantity you can sell is never exercised |
 | Prices and liquidity roughly follow the real market but are not it | Real spreads, slippage and partial fills |
 | An account of 10,000 fake USDT, scaled down by the two lines above | A real wallet of about $16 |
 | A stop-loss or take-profit filling is rare to watch | The behaviour of the other OCO leg after a fill is unverified (see NEXT_STEPS.md) |

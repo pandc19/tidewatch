@@ -6,6 +6,7 @@
 - [SETUP_CHECKLIST.md](../SETUP_CHECKLIST.md): every external piece to set up, in order, with how to check it and what is unverified
 - [TESTING.md](../TESTING.md): manual test plan, with the reading list to do first
 - [guides/code-flow.md](guides/code-flow.md): how one trade moves through the system, and why
+- [guides/running-modes.md](guides/running-modes.md): dry run vs demo vs rehearsal, one bot per testnet account, resetting a database; with [guides/queries.sql](guides/queries.sql) for DBeaver
 - [guides/developer-guide.md](guides/developer-guide.md): conventions, tests, migrations, adding things
 
 ## Operations
@@ -28,7 +29,9 @@ docs/
 ├── deployment.md
 ├── guides/
 │   ├── code-flow.md
-│   └── developer-guide.md
+│   ├── developer-guide.md
+│   ├── running-modes.md
+│   └── queries.sql
 └── adr/
     ├── README.md
     ├── 001-decimal-and-exchange-filters.md
