@@ -1,12 +1,12 @@
 # Deploying with Coolify
 
-Tidewatch deploys the same way poketrain does: a push to `main` makes Coolify build the [Dockerfile](../Dockerfile) on the droplet and start the new container. The branching rules that feed it are in [git-flow.md](git-flow.md). The server, Traefik and `shared-postgres` are the ones described in poketrain's deployment reference (`shared-infra` creates them); this page covers only what is specific to the bot.
+A push to `main` makes Coolify build the [Dockerfile](../Dockerfile) on the droplet and start the new container. The branching rules that feed it are in [git-flow.md](git-flow.md). The droplet (`shared-apps-1`), Traefik and `shared-postgres` are shared with other apps and are created by the `shared-infra` repo; this page covers only what is specific to the bot.
 
 **Status:** the image is built and checked locally, including the container hand-over: two containers on one database, the second waits (healthy) and takes over after `docker stop` or `kill -9` of the first, and a waiter that times out exits 1 (2026-10-19, keyless dry-run, throwaway database). **Nothing here has run on Coolify.** Items marked *verify* are things I could not check from the repo; confirm each once in the dashboard and tick the checklist at the bottom.
 
 ## How Tidewatch differs from a web app
 
-| Poketrain (web app) | Tidewatch (bot) |
+| A typical web app | Tidewatch (bot) |
 |---|---|
 | Has a port, a domain, TLS | **No port, no domain.** It only makes outbound connections (Binance, Telegram, PostgreSQL) |
 | Health check = HTTP `/api/health` | Health check = a heartbeat file the engine touches every tick (`python -m bot.instance`) |
@@ -45,11 +45,11 @@ Keep this table and `.env.example` in sync when a variable is added. The names `
 
 ## The database
 
-- One database per purpose on `shared-postgres`, role `tidewatch_app` (`NOSUPERUSER NOCREATEDB NOCREATEROLE`, owns only its databases, `CONNECT` revoked from `PUBLIC`), as for poketrain.
+- One database per purpose on `shared-postgres`, role `tidewatch_app` (`NOSUPERUSER NOCREATEDB NOCREATEROLE`, owns only its databases, `CONNECT` revoked from `PUBLIC`, so it cannot open another app's database).
 - **Rehearsal:** database `tidewatch_testnet`. **Real money, later:** a different database whose name contains `prod` or `live`. The startup guard refuses `BINANCE_TESTNET=false` with a `testnet` name and `BINANCE_TESTNET=true` with a `prod`/`live` name ([running-modes.md](guides/running-modes.md)).
 - The migrations run at every container start (`alembic upgrade head`), and the role needs to create tables.
 - **Migrations run while the old container may still be running.** Write them so the previous code can live with them (add columns nullable or with a default; drop or rename in a later PR). A failed migration stops the new container, and the old one keeps running.
-- The `tax_ledger` is the capital-gains record. It needs the same backup care as poketrain's database: a scheduled backup, and a restore tested at least once.
+- The `tax_ledger` is the capital-gains record. It needs a scheduled backup in Coolify, and a restore tested at least once.
 
 ## What a deploy does to a running bot
 

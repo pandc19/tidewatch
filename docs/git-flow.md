@@ -1,6 +1,6 @@
 # Git flow
 
-How a change gets from a branch to `main`, and from `main` to the server. The same scheme as poketrain.
+How a change gets from a branch to `main`, and from `main` to the server.
 
 ## Branching
 
