@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     # Database: just a connection string (local container or a managed service).
     # Provider URLs (postgres://..., ?sslmode=require) are accepted and converted for asyncpg.
     database_url: SecretStr = SecretStr(
-        "postgresql+asyncpg://trading_bot_app:changeme@localhost:5432/trading_bot_local"
+        "postgresql+asyncpg://tidewatch_app:changeme@localhost:5432/tidewatch_local"
     )
     db_pool_size: int = Field(default=5, ge=1)
     db_max_overflow: int = Field(default=5, ge=0)

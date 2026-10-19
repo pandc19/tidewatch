@@ -41,28 +41,39 @@ cp .env.example .env
 
 The defaults are safe: testnet and dry-run are on, and no Binance keys are needed yet. Percentages are fractions (`0.04` = 4%).
 
-## 3. Create the database
+## 3. Create the databases
 
-Connect as a superuser to your existing Postgres container (here named `postgres18`; use yours) and create a role and database for the bot:
+Connect as a superuser to your existing Postgres container (here named `postgres18`; use yours) and create a role and three databases:
 
 ```bash
 docker exec postgres18 psql -U postgres \
-  -c "CREATE ROLE trading_bot_app LOGIN PASSWORD 'changeme';" \
-  -c "CREATE DATABASE trading_bot_local OWNER trading_bot_app;"
+  -c "CREATE ROLE tidewatch_app LOGIN PASSWORD 'changeme';" \
+  -c "CREATE DATABASE tidewatch_local OWNER tidewatch_app;" \
+  -c "CREATE DATABASE tidewatch_testnet OWNER tidewatch_app;" \
+  -c "CREATE DATABASE tidewatch_test OWNER tidewatch_app;"
 ```
 
-These match the `DATABASE_URL` in `.env.example`. Change both together if you pick other names.
+| Database | Used for | Setting |
+|---|---|---|
+| `tidewatch_local` | running the bot on this machine, demo mode | `DATABASE_URL` |
+| `tidewatch_testnet` | the long testnet rehearsal (section 9), kept apart from demo data | `DATABASE_URL` when you rehearse |
+| `tidewatch_test` | `pytest` only: throwaway, and what CI will use | `TEST_DATABASE_URL` |
+
+`tidewatch_local` and `tidewatch_test` match `.env.example`. Change the names and `.env` together if you pick others. `pytest` refuses to run if `TEST_DATABASE_URL` is the same as `DATABASE_URL`.
 
 ## 4. Migrate
 
 ```bash
-.venv/bin/alembic upgrade head
+.venv/bin/alembic upgrade head                                             # tidewatch_local
+DATABASE_URL="<your TEST_DATABASE_URL>" .venv/bin/alembic upgrade head     # tidewatch_test
 ```
+
+Do the same for `tidewatch_testnet` before the rehearsal. Run it again for each database after a new migration.
 
 ## 5. Verify
 
 ```bash
-.venv/bin/pytest                # 319 tests; schema and reconciliation tests need the database
+.venv/bin/pytest                # 319 tests; the database tests use TEST_DATABASE_URL and skip without it
 .venv/bin/python -m bot.main --check-only    # startup checks, then exits
 .venv/bin/python -m bot.main                 # startup checks, then the engine runs until Ctrl+C
 ```
@@ -146,7 +157,7 @@ Expect it to be **slow**. With the real settings the scanner signalled about onc
 | A stop-loss or take-profit filling is rare to watch | The behaviour of the other OCO leg after a fill is unverified (see NEXT_STEPS.md) |
 | Your own machine | A server: firewall, region, restarts, a managed database |
 
-**Keep it apart from real data.** The rehearsal's trades go to the same tables as real ones, and the tax export does not mark which is which. Use a database of its own (for example create `trading_bot_testnet` next to `trading_bot_local`, as in section 3, and run `alembic upgrade head` against it), and use a different one for real money later.
+**Keep it apart from real data.** The rehearsal's trades go to the same tables as real ones, and the tax export does not mark which is which. Use a database of its own: `tidewatch_testnet`, created in section 3 (run `alembic upgrade head` against it, and point `DATABASE_URL` at it), and use a different one for real money later.
 
 **For a closer match to a server**, run it in Docker instead: set `RESTART_POLICY=unless-stopped` and the database URL as the container sees it (`host.docker.internal` for Postgres on this Mac), then `docker compose up -d --build` and `docker compose logs -f app`. `./scripts/preflight.sh` checks that setup first. This is the same image and compose file a server would use.
 
@@ -155,7 +166,7 @@ Expect it to be **slow**. With the real settings the scanner signalled about onc
 ```bash
 docker compose build
 docker compose run --rm \
-  -e DATABASE_URL="postgresql+asyncpg://trading_bot_app:changeme@host.docker.internal:5432/trading_bot_local" \
+  -e DATABASE_URL="postgresql+asyncpg://tidewatch_app:changeme@host.docker.internal:5432/tidewatch_local" \
   app
 ```
 
@@ -174,8 +185,8 @@ One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and
 
 | Symptom | Cause |
 |---|---|
-| Schema tests are skipped | No database at `DATABASE_URL`. Do step 3 and 4 |
-| `role "trading_bot_app" does not exist` | Step 3 was run against a different Postgres than the one on port 5432 |
+| Database tests are skipped | `TEST_DATABASE_URL` is unset or unreachable. Do steps 3 and 4 |
+| `role "tidewatch_app" does not exist` | Step 3 was run against a different Postgres than the one on port 5432 |
 | `Telegram refused sendMessage: 401` | Wrong `TELEGRAM_BOT_TOKEN` |
 | `Telegram refused sendMessage: 400 ... chat not found` | Wrong `TELEGRAM_CHAT_ID`, or you never sent the bot a message (step 3 of section 7) |
 | `Bad CPU type in executable` from uv | uv picked an Intel-only Python. Run `uv sync --python 3.12` so uv manages its own |

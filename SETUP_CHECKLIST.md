@@ -20,7 +20,7 @@ Tick the boxes as you go. Work through the stages in order; do not skip ahead to
 
 ## 1. PostgreSQL (the bot's memory)
 
-- [x] **Local development.** The Postgres container on port 5432 with the `trading_bot_local` database. Done.
+- [x] **Local development.** The Postgres container on port 5432 with the `tidewatch_local`, `tidewatch_testnet` and `tidewatch_test` databases. Done.
 - [ ] **Production: a managed database.** Needed so trade history, the tax ledger and the kill-switch pause survive restarts and server rebuilds.
   1. Pick a provider (DigitalOcean Managed Databases, Neon, Supabase, ...). PostgreSQL 13 or newer.
   2. Create a database and a dedicated user for the bot (not the admin user). The user needs to create tables in its schema, because migrations run at every start.

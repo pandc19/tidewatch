@@ -20,7 +20,7 @@ Read, in this order (about 30 minutes):
 
 Reference while testing: [docs/guides/developer-guide.md](docs/guides/developer-guide.md) (commands, tests) and the table at the top of `.env.example`.
 
-**Use a database of its own for testing** (for example `trading_bot_testnet`, created as in GETTING_STARTED section 3, then `alembic upgrade head` against it). Testnet trades land in the same tables as real ones and the tax export does not mark which is which.
+**Use a database of its own for each purpose** (GETTING_STARTED section 3): `tidewatch_test` for `pytest` (`TEST_DATABASE_URL`), `tidewatch_local` for demo runs and `tidewatch_testnet` for the long rehearsal. Testnet trades land in the same tables as real ones and the tax export does not mark which is which. Run `alembic upgrade head` against each one.
 
 ---
 
@@ -33,9 +33,9 @@ Reference while testing: [docs/guides/developer-guide.md](docs/guides/developer-
 .venv/bin/alembic check
 ```
 
-- [ ] `pytest` passes with **no skipped schema tests** (skips mean no database at `DATABASE_URL`).
+- [ ] `pytest` passes with **no skipped database tests** (skips mean `TEST_DATABASE_URL` is unset or the database is unreachable).
 - [ ] `ruff check .` is clean.
-- [ ] `alembic upgrade head` succeeds on the empty testing database. `alembic check` reports no pending changes.
+- [ ] `alembic upgrade head` succeeds on each empty database (`tidewatch_test`, `tidewatch_local`, `tidewatch_testnet`). `alembic check` reports no pending changes.
 
 ## 2. Startup checks
 

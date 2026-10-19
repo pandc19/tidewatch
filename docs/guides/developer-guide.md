@@ -36,7 +36,7 @@
 - `tests/fakes.py` has `FakeBinance`, a stateful stand-in for python-binance's client: orders it accepts persist, `fill()`/`cancel_externally()` move balances and cancel the other OCO leg, and every call is recorded so tests can assert what was (or was not) sent. Add new endpoints there, copying real response shapes.
 - `tests/test_engine.py` drives whole trades against the real database and that fake. The engine takes a `session_factory`, so tests hand it the shared rolled-back session. When you change engine behaviour, break it on purpose once and check a test fails.
 - `tests/test_telegram_notifier.py` runs `TelegramNotifier` against a local aiohttp server that imitates the Bot API (real HTTP): requests, 429, 4xx, 5xx, timeouts and token hygiene. `tests/test_notifications.py` covers message text, the queue and the engine with a notifier attached. Nothing in the suite talks to real Telegram.
-- Schema and reconciliation tests run against the real migrated PostgreSQL inside a transaction that is rolled back (`tests/conftest.py`), and skip if no database is reachable.
+- Schema, reconciliation, engine and ledger tests run against a real migrated PostgreSQL inside a transaction that is rolled back (`tests/conftest.py`). That database is `TEST_DATABASE_URL` (a throwaway `tidewatch_test`, never the one the bot runs on; the fixture fails if it equals `DATABASE_URL`). They skip when it is unset or unreachable. CI should create an empty PostgreSQL, set `TEST_DATABASE_URL`, run `DATABASE_URL=$TEST_DATABASE_URL alembic upgrade head`, then `pytest`.
 - Fixtures for Binance filters mirror live `exchangeInfo` responses. When adding one, copy a real response instead of inventing values.
 
 ## Adding things
