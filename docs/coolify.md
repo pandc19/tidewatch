@@ -2,7 +2,7 @@
 
 A push to `main` makes Coolify build the [Dockerfile](../Dockerfile) on the droplet and start the new container. The branching rules that feed it are in [git-flow.md](git-flow.md). The droplet (`shared-apps-1`), Traefik and `shared-postgres` are shared with other apps and are created by the `shared-infra` repo; this page covers only what is specific to the bot.
 
-**Status:** the image is built and checked locally, including the container hand-over: two containers on one database, the second waits (healthy) and takes over after `docker stop` or `kill -9` of the first, and a waiter that times out exits 1 (2026-10-19, keyless dry-run, throwaway database). **First Coolify deploy, 2026-10-19:** Coolify accepted the application with no port, built the image from the Dockerfile (about a minute), found the image's health check, waited out the full 120 s start period, and the deployment finished; the bot sent its "started" Telegram message tagged `[TESTNET]` (so `DRY_RUN=false` on the testnet). Not yet seen on Coolify: a redeploy over a running container (the hand-over), the stop timeout, and Binance reachability from the droplet beyond the startup checks passing. Items marked *verify* are things I could not check from the repo; confirm each once in the dashboard and tick the checklist at the bottom.
+**Status:** the image is built and checked locally, including the container hand-over: two containers on one database, the second waits (healthy) and takes over after `docker stop` or `kill -9` of the first, and a waiter that times out exits 1 (2026-10-19, keyless dry-run, throwaway database). **First Coolify deploy, 2026-10-19:** Coolify accepted the application with no port, built the image from the Dockerfile (about a minute), found the image's health check, waited out the full 120 s start period, and the deployment finished; the bot sent its "started" Telegram message tagged `[TESTNET]` (so `DRY_RUN=false` on the testnet). **Second deploy, same day:** the hand-over worked on Coolify with no position open. The new container logged "another instance is running… waiting for it to stop", waited exactly the 120 s start period, Coolify then stopped the old one (a clean "bot stopped" alert arrived), and the new one took the lock within a second and started ("bot started" alert). The deploy took 3 m 34 s. Not yet seen: a hand-over with an open position, and the configured stop timeout (the clean shutdown only shows it was long enough this time). Items marked *verify* are things I could not check from the repo; confirm each once in the dashboard and tick the checklist at the bottom.
 
 ## How Tidewatch differs from a web app
 
@@ -59,7 +59,7 @@ Keep this table and `.env.example` in sync when a variable is added. The names `
 4. The new container takes the lock, reconciles with Binance, and carries on. Open positions keep their exit orders on the exchange throughout; the bot never sells by itself.
 5. If the new container never gets the lock (10 minutes by default) or dies, the deployment fails and the old one keeps running.
 
-Steps 2 to 4 are seen with plain containers (see Status), not yet with Coolify driving them. The first Coolify deploy should be done with `DRY_RUN=true`, then with a testnet position open, to watch steps 3 and 4. Not tested: a hand-over with an open position, and what Coolify does when the stop takes longer than its timeout.
+Steps 2 to 4 are seen with plain containers and on Coolify (see Status). Each deploy sends a "stopped" and a "started" alert. Coolify waits the whole 120 s start period before its first health check, so the new container waits about two minutes for the lock. Not tested: a hand-over with an open position, and what Coolify does when the stop takes longer than its timeout.
 
 ## Binance and the server
 
@@ -83,5 +83,5 @@ Steps 2 to 4 are seen with plain containers (see Status), not yet with Coolify d
 - [ ] Postgres: database and role created, `CONNECT` revoked from `PUBLIC`, a backup schedule, one test restore
 - [ ] Binance answers from the droplet (HTTP 200 on `/api/v3/time`)
 - [x] A first deploy: it ran and sent its "started" alert (with `DRY_RUN=false` on the testnet, not the dry run first suggested)
-- [ ] A second deploy over the running container shows the new one waiting, then taking over
+- [x] A second deploy over the running container shows the new one waiting, then taking over (2026-10-19, no position open)
 - [ ] GitHub: the `main` ruleset and settings from [git-flow.md](git-flow.md), with `check` required
