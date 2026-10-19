@@ -2,7 +2,7 @@
 
 Tidewatch deploys the same way poketrain does: a push to `main` makes Coolify build the [Dockerfile](../Dockerfile) on the droplet and start the new container. The branching rules that feed it are in [git-flow.md](git-flow.md). The server, Traefik and `shared-postgres` are the ones described in poketrain's deployment reference (`shared-infra` creates them); this page covers only what is specific to the bot.
 
-**Status:** the image is built and its parts checked locally (user, files, health check logic). **Nothing here has run on Coolify.** Items marked *verify* are things I could not check from the repo; confirm each once in the dashboard and tick the checklist at the bottom.
+**Status:** the image is built and checked locally, including the container hand-over: two containers on one database, the second waits (healthy) and takes over after `docker stop` or `kill -9` of the first, and a waiter that times out exits 1 (2026-10-19, keyless dry-run, throwaway database). **Nothing here has run on Coolify.** Items marked *verify* are things I could not check from the repo; confirm each once in the dashboard and tick the checklist at the bottom.
 
 ## How Tidewatch differs from a web app
 
@@ -59,7 +59,7 @@ Keep this table and `.env.example` in sync when a variable is added. The names `
 4. The new container takes the lock, reconciles with Binance, and carries on. Open positions keep their exit orders on the exchange throughout; the bot never sells by itself.
 5. If the new container never gets the lock (10 minutes by default) or dies, the deployment fails and the old one keeps running.
 
-Not seen yet in a real deploy. The first one should be done with `DRY_RUN=true`, then with a testnet position open, to watch step 3 and 4.
+Steps 2 to 4 are seen with plain containers (see Status), not yet with Coolify driving them. The first Coolify deploy should be done with `DRY_RUN=true`, then with a testnet position open, to watch steps 3 and 4. Not tested: a hand-over with an open position, and what Coolify does when the stop takes longer than its timeout.
 
 ## Binance and the server
 
