@@ -207,3 +207,24 @@ def test_chats_from_updates_lists_ids_and_names_once():
     ]
 
     assert chats_from_updates(updates) == {7: "Ana Lopez (@ana)", -100: "Alerts"}
+
+
+async def test_poll_updates_sends_the_long_poll_fields_and_returns_the_list(serve):
+    updates = [{"update_id": 9, "message": {"text": "/status"}}]
+    fake, notifier, _ = await serve((200, {"ok": True, "result": updates}))
+
+    assert await notifier.poll_updates(10, 25) == updates
+
+    (request,) = fake.requests
+    assert request["path"] == f"/bot{TOKEN}/getUpdates"
+    assert request["body"] == {"offset": 10, "timeout": 25, "limit": 20, "allowed_updates": ["message"]}
+
+
+async def test_poll_updates_without_an_offset_omits_it_and_a_conflict_is_not_retried(serve):
+    fake, notifier, _ = await serve((409, {"ok": False, "description": "Conflict: terminated by other getUpdates request"}))
+
+    with pytest.raises(NotifierError) as err:
+        await notifier.poll_updates(None, 0)
+
+    assert "409" in str(err.value) and TOKEN not in str(err.value)
+    assert "offset" not in fake.requests[0]["body"] and len(fake.requests) == 1

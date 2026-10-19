@@ -89,6 +89,8 @@ The trading and operations words used in this project, with the meaning they hav
 | **Account stream** | Binance's live feed of changes to your orders and balance (user data stream). Off in dry-run. |
 | **Polling safety net** | Re-reading live orders over REST every tick, so a missed stream event is corrected. |
 | **Engine tick** | The engine's periodic check (`ENGINE_TICK_SECONDS=30`): entry timeouts, unprotected positions, new entries. |
+| **Command (Telegram)** | A message such as `/status` sent to the bot. Read-only, answered only for `TELEGRAM_CHAT_ID`, and only when `TELEGRAM_COMMANDS=true` (ADR-008). Stale ones from before a restart are skipped. |
+| **Long polling** | How the bot listens: it asks Telegram "anything new?" and Telegram holds the request open up to 25 seconds. Only one process may do it per token (a second gets 409 Conflict). |
 | **Observer hook / alert queue** | Alerts are queued by the engine and sent separately, so a slow Telegram can never delay a trade (ADR-007). |
 
 ## Modes

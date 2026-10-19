@@ -15,6 +15,8 @@ import asyncio
 import logging
 import signal
 import sys
+import time
+from datetime import UTC, datetime
 
 from bot.config.settings import APP_NAME, Settings, get_settings
 from bot.database.connection import Database
@@ -22,10 +24,12 @@ from bot.engine.runner import EngineRunner
 from bot.engine.state_machine import EntrySource, NoEntries, TradingEngine
 from bot.instance import Heartbeat, InstanceLock
 from bot.services.binance_client import ExchangeClient, ExchangeError
+from bot.services.commands import build_command_listener
 from bot.services.notifications import NotificationService, build_notifier, send_test_message
 from bot.services.reconciliation import reconcile
 from bot.services.risk_manager import config_problems
 from bot.services.scanner import Scanner
+from bot.services.status import format_status, gather_status
 
 log = logging.getLogger("bot")
 
@@ -171,6 +175,28 @@ async def _engine_with_lock(
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
     watcher = asyncio.ensure_future(lock.watch(stop))
+    commands: asyncio.Future | None = None
+    if alerts and settings.telegram_commands:
+        # Started only now, with the instance lock held: two processes cannot poll one token.
+        started = time.monotonic()
+        stream_on = not settings.dry_run and settings.has_binance_credentials
+
+        async def status() -> str:
+            return format_status(
+                await gather_status(
+                    settings=settings, sessions=db.session, exchange=exchange,
+                    trading_blocked=engine.trading_blocked,
+                    tick_age_seconds=heartbeat.age_seconds(),
+                    uptime_seconds=time.monotonic() - started,
+                    stream_on=stream_on, now=datetime.now(UTC),
+                )
+            )
+
+        listener = build_command_listener(settings, reply=alerts.notify, status=status)
+        commands = asyncio.ensure_future(listener.run(stop))
+        log.info("telegram commands: listening for /status and /help from the configured chat")
+    elif settings.telegram_commands:
+        log.warning("TELEGRAM_COMMANDS is on but Telegram is not configured: no commands")
     try:
         if alerts:
             alerts.announce_started()
@@ -179,6 +205,9 @@ async def _engine_with_lock(
             alerts.announce_stopped()
     finally:
         watcher.cancel()
+        if commands:
+            commands.cancel()
+            await asyncio.gather(commands, return_exceptions=True)
         if alerts:
             await alerts.close()  # flushes what it can, within a time limit
     return 1 if lock.lost else 0

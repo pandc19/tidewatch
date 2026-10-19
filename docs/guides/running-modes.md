@@ -55,6 +55,10 @@ The engine takes a PostgreSQL advisory lock (`bot/instance.py`) before it does a
 
 The engine touches `HEARTBEAT_PATH` every tick (also while waiting for the lock). `python -m bot.instance --path ... --max-age N` exits 1 if the file is missing or older than N seconds; the Docker `HEALTHCHECK` will use it. A hung tick stops the beat, so the container shows as unhealthy. It does not alert anyone by itself.
 
+## One Telegram poller per token
+
+Alerts can come from any number of bots. Commands (`TELEGRAM_COMMANDS=true`) cannot: Telegram lets one process poll a token, and a second one makes both fail with 409 Conflict. Turn commands on only where you want the answers (the server), and leave them off on a laptop that shares the token. During a deploy only the instance that holds the lock polls.
+
 ## Starting over
 
 To empty a database and leave nothing behind on the exchange:

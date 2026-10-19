@@ -112,6 +112,9 @@ class Settings(BaseSettings):
     unprotected_reminder_minutes: int = Field(default=15, ge=0)
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
+    # Answer read-only commands (/status) from that chat. Off by default: only one process can poll
+    # a bot token at a time, so a laptop sharing the token with a server must leave it off (ADR-008).
+    telegram_commands: bool = False
 
     @field_validator("database_url")
     @classmethod

@@ -117,6 +117,18 @@ class TelegramNotifier(Notifier):
             },
         )
 
+    async def poll_updates(self, offset: int | None, timeout: int) -> list[dict]:
+        """Long-poll for new messages (`timeout` seconds). `offset` confirms everything before it.
+
+        Build the notifier with an HTTP timeout longer than `timeout`. Only one process may poll a
+        token at a time: a second poller gets 409 Conflict.
+        """
+        payload: dict = {"timeout": timeout, "limit": 20, "allowed_updates": ["message"]}
+        if offset is not None:
+            payload["offset"] = offset
+        result = await self._call("getUpdates", payload)
+        return result if isinstance(result, list) else []
+
     async def get_updates(self) -> list[dict]:
         result = await self._call("getUpdates", {"timeout": 0, "limit": 100})
         return result if isinstance(result, list) else []

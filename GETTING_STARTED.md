@@ -96,6 +96,8 @@ Without this the bot works and alerts are log lines only. To get them on your ph
 
 Every alert starts with `[LIVE]`, `[TESTNET]` or `[DRY RUN]` so a practice alert cannot be mistaken for real money. If Telegram is down the bot keeps trading; failed alerts are logged.
 
+**Commands (optional).** Set `TELEGRAM_COMMANDS=true` and restart; then `/status` in the bot's chat replies with the mode, engine health, the open position and results, and `/help` lists the commands. They are read-only and only the chat in `TELEGRAM_CHAT_ID` is answered. Only one running bot may have this on per token (a laptop and a server sharing one token would fight; Telegram answers 409), and `--find-chat-id` cannot run while a bot is polling. See ADR-008.
+
 ## 8. Run the whole bot on your machine, every feature on
 
 Everything runs locally: the scanner, the trading engine, Telegram alerts, the kill-switch, the exports. You need sections 1 to 5 done (and section 7 for Telegram alerts). One script manages it:

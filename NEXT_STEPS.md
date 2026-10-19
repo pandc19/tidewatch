@@ -56,7 +56,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 - **Widen or tune the 2% stop** once there is real trade history.
 - **Shorter buy timeout.** With one position, an unfilled buy locks the whole wallet for up to 3 days.
 - **WhatsApp or another alert channel.**
-- **Telegram commands.** Two-way control from the chat, for example `/status`, `/pause`, `/resume`, cancel the open buy, sell the open position now. Must only obey the owner's chat ID. Today the bot only sends notifications (ADR-007).
+- **More Telegram commands.** `/status` and `/help` exist (read-only, ADR-008; set `TELEGRAM_COMMANDS=true`, not yet seen against real Telegram). Still to decide: state-changing commands such as `/pause`, `/resume`, cancel the open buy, sell the open position now. Each needs its own ADR and a safe path into the engine. `/status` could also show the last scan and why no entry has fired.
 - **Partial manual sales and partial fills of an exit leg** are flagged or waited out; no special handling.
 
 ---
