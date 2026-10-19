@@ -22,7 +22,7 @@ A push to `main` makes Coolify build the [Dockerfile](../Dockerfile) on the drop
 | Ports exposed | none. Coolify accepted this (first deploy). It may generate a domain for the app; remove it, nothing listens |
 | Domain | none |
 | Auto deploy | on (gated by the GitHub ruleset in [git-flow.md](git-flow.md)) |
-| Health check | Coolify's own: **off**. The image's `HEALTHCHECK` is used: the deploy log says "Custom healthcheck found in Dockerfile" and the application's health check setting shows it. Coolify waits the whole start period (120 s) before the first check, so a deploy takes at least 2 minutes |
+| Health check | Coolify's own: **off**. The image's `HEALTHCHECK` is used: the deploy log says "Custom healthcheck found in Dockerfile" and the application's health check setting shows it. Coolify waits the whole start period (45 s since 2026-10-19; it was 120 s on the first two deploys) before the first check, so that is the minimum a deploy takes after the build |
 | Stop timeout | **40 s or more.** The bot flushes alerts and closes the Binance stream on SIGTERM, which takes up to about 20 s. Compose sets 40 s; the Dockerfile cannot. *Verify* where Coolify sets it (custom Docker options `--stop-timeout 40`, or its setting) |
 | Restart | always/unless-stopped is fine once it runs well; a crash loop is visible in the logs |
 | Server | `shared-apps-1` |
@@ -59,7 +59,7 @@ Keep this table and `.env.example` in sync when a variable is added. The names `
 4. The new container takes the lock, reconciles with Binance, and carries on. Open positions keep their exit orders on the exchange throughout; the bot never sells by itself.
 5. If the new container never gets the lock (10 minutes by default) or dies, the deployment fails and the old one keeps running.
 
-Steps 2 to 4 are seen with plain containers and on Coolify (see Status). Each deploy sends a "stopped" and a "started" alert. Coolify waits the whole 120 s start period before its first health check, so the new container waits about two minutes for the lock. Not tested: a hand-over with an open position, and what Coolify does when the stop takes longer than its timeout.
+Steps 2 to 4 are seen with plain containers and on Coolify (see Status). Each deploy sends a "stopped" and a "started" alert. Coolify waits the whole start period (45 s now, 120 s on the first two deploys) before its first health check, so the new container waits about that long for the lock. Not tested: a hand-over with an open position, and what Coolify does when the stop takes longer than its timeout.
 
 ## Binance and the server
 
