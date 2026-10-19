@@ -99,6 +99,11 @@ class Settings(BaseSettings):
 
     # Engine: how often it checks entry timeouts, unprotected positions and new entries.
     engine_tick_seconds: int = Field(default=30, ge=1)
+    # Liveness: the engine touches this file every tick and the Docker HEALTHCHECK reads its age.
+    heartbeat_path: Path = Path("/tmp/tidewatch-heartbeat")
+    heartbeat_max_age_seconds: int = Field(default=180, ge=10)
+    # A second instance on the same database waits this long for the first to stop, then exits.
+    instance_lock_wait_seconds: int = Field(default=600, ge=0)
     # Minimum gap between attempts to place a refused exit again.
     exit_retry_seconds: int = Field(default=120, ge=1)
 

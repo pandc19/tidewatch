@@ -2,6 +2,7 @@ import asyncio
 
 from bot.config.settings import Settings
 from bot.engine.runner import EngineRunner
+from bot.instance import Heartbeat
 from bot.services.binance_client import ExchangeClient
 from tests.fakes import FakeBinance
 
@@ -35,10 +36,10 @@ class StubStream:
         self.stopped = True
 
 
-def runner(engine, *, stream=None, **env):
+def runner(engine, *, stream=None, heartbeat=None, **env):
     settings = Settings(_env_file=None, ENGINE_TICK_SECONDS="1", **env)
     exchange = ExchangeClient(FakeBinance(), dry_run=settings.dry_run)
-    return EngineRunner(engine, exchange, settings, stream=stream)
+    return EngineRunner(engine, exchange, settings, stream=stream, heartbeat=heartbeat)
 
 
 async def run_for(r, seconds):
@@ -79,3 +80,9 @@ async def test_live_mode_with_keys_builds_the_real_stream():
 async def test_dry_run_and_missing_keys_both_skip_the_stream():
     assert runner(StubEngine())._stream is None
     assert runner(StubEngine(), DRY_RUN="false")._stream is None  # no keys
+
+
+async def test_every_tick_beats_even_when_the_tick_fails(tmp_path):
+    beat = Heartbeat(tmp_path / "hb")
+    await run_for(runner(StubEngine(fail_first_tick=True), heartbeat=beat), 0.2)
+    assert beat.age_seconds() is not None and beat.age_seconds() < 5
