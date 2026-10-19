@@ -5,6 +5,7 @@
 - [GETTING_STARTED.md](../GETTING_STARTED.md): local setup
 - [SETUP_CHECKLIST.md](../SETUP_CHECKLIST.md): every external piece to set up, in order, with how to check it and what is unverified
 - [TESTING.md](../TESTING.md): manual test plan, with the reading list to do first
+- [glossary.md](glossary.md): the trading and operations terms used here, with this project's values
 - [git-flow.md](git-flow.md): branches, PRs, commit conventions, CI and the GitHub settings to apply
 - [guides/code-flow.md](guides/code-flow.md): how one trade moves through the system, and why
 - [guides/running-modes.md](guides/running-modes.md): dry run vs demo vs rehearsal, one bot per testnet account, resetting a database; with [guides/queries.sql](guides/queries.sql) for DBeaver
@@ -31,6 +32,7 @@ docs/
 ├── coolify.md
 ├── deployment.md
 ├── git-flow.md
+├── glossary.md
 ├── guides/
 │   ├── code-flow.md
 │   ├── developer-guide.md

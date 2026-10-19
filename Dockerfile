@@ -30,9 +30,11 @@ USER bot
 
 # No port: the bot only makes outbound connections. Liveness is the heartbeat file the engine
 # touches every tick (bot/instance.py); a hung engine stops it and the container turns unhealthy.
-# The start period covers the migrations, the startup checks and, during a deploy, the new
-# container waiting for the old one to release the database (it keeps beating while it waits).
-HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=4 \
+# The start period covers the migrations and the startup checks (a few seconds normally). During
+# a deploy the new container then waits for the old one to release the database, and keeps
+# beating while it waits. Coolify sits out the whole start period before its first check, so this
+# value is also the minimum time a deploy takes beyond the build (it was 120 s on the first two).
+HEALTHCHECK --interval=15s --timeout=10s --start-period=45s --retries=4 \
   CMD python -m bot.instance --path "${HEARTBEAT_PATH:-/tmp/tidewatch-heartbeat}" --max-age "${HEARTBEAT_MAX_AGE_SECONDS:-180}"
 
 # SIGTERM reaches Python (the entrypoint execs it) and the bot shuts down cleanly: it flushes
