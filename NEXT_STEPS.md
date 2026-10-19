@@ -2,13 +2,13 @@
 
 Pending items only. When something is built or resolved, delete it from this file. What *you* must set up (keys, Telegram, database, server) is in [SETUP_CHECKLIST.md](SETUP_CHECKLIST.md).
 
-Last updated 2026-10-06, during phase 5 (CSV export and Telegram alerts built; real Telegram unverified).
+Last updated 2026-10-19, during phase 5 (CSV export and Telegram alerts built; Telegram delivery verified, trade-alert layout not yet seen).
 
 ---
 
-## Verify Telegram against the real API
+## Telegram: trade alerts on a real run
 
-The alerts are built and tested against a local server that imitates the Bot API; they have **not** been sent to real Telegram. Create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`, run `python -m bot.services.notifications --find-chat-id`, set `TELEGRAM_CHAT_ID`, then `--test` and `python -m bot.main --check-only`. Also check on a testnet run that the HTML renders as intended (tables aligned in the `<pre>` blocks).
+The bot, token and chat ID work against real Telegram (`--test` arrived on the phone, 2026-10-19; wrong token and wrong chat ID fail cleanly without leaking the token). Still to check: `python -m bot.main --check-only` sending its message, and on a testnet run that the HTML renders as intended (tables aligned in the `<pre>` blocks).
 
 ---
 
@@ -77,5 +77,5 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 
 ## Build order
 
-5. Notifications: done except verifying against real Telegram (see above).
+5. Notifications: done; delivery verified, trade-alert layout to be seen on a testnet run.
 6. Deployment: verify the Dockerfile, compose and droplet guide on a real droplet.
