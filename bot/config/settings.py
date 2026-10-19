@@ -38,13 +38,15 @@ def normalize_database_url(raw: str) -> str:
     )
 
 
+# The app name. Not a setting: a rename is this line, `pyproject.toml` and the compose project name.
+APP_NAME = "Tidewatch"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore", frozen=True
     )
 
-    # Identity. The only runtime place the app name lives, so a rename is one line.
-    app_name: str = "trading-bot"
     log_level: str = "INFO"
 
     # Binance. Testnet and dry-run default to ON so a fresh checkout cannot trade real money.

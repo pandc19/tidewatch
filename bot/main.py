@@ -16,7 +16,7 @@ import logging
 import signal
 import sys
 
-from bot.config.settings import Settings, get_settings
+from bot.config.settings import APP_NAME, Settings, get_settings
 from bot.database.connection import Database
 from bot.engine.runner import EngineRunner
 from bot.engine.state_machine import EntrySource, NoEntries, TradingEngine
@@ -33,7 +33,7 @@ async def run(check_only: bool) -> int:
     settings = get_settings()
     logging.basicConfig(
         level=settings.log_level.upper(),
-        format=f"%(asctime)s %(levelname)s [{settings.app_name}] %(name)s: %(message)s",
+        format=f"%(asctime)s %(levelname)s [{APP_NAME}] %(name)s: %(message)s",
     )
     log.info(
         "starting: testnet=%s dry_run=%s symbols=%s tp=%s sl=%s",

@@ -18,7 +18,7 @@
 2. **Every price and quantity goes through [precision.py](../../bot/config/precision.py)** before it reaches Binance: round, then `validate_order`. Quantities round down, never up.
 3. **Percentages are fractions** (`0.04` = 4%) everywhere: env vars, settings, columns.
 4. **Nothing is hardcoded that the owner may tune**: it is a setting in [settings.py](../../bot/config/settings.py) and a line in `.env.example`.
-5. **The app name only lives in `APP_NAME`, `pyproject.toml` and the compose project name.** Don't write it into code, queries or messages; read `settings.app_name`.
+5. **The app name only lives in `APP_NAME` (`bot/config/settings.py`), `pyproject.toml` and the compose project name.** Don't write it into code, queries or messages; import `APP_NAME` from `bot.config.settings`.
 6. **Dry-run must never reach Binance's order endpoints.** It is enforced inside `ExchangeClient`, the only module that talks to Binance. Don't call the python-binance client from anywhere else.
    Likewise every order is filter-validated there; don't add a second path that skips it.
 7. **Never log or print secrets.** Keys are `SecretStr`.

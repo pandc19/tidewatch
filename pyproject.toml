@@ -1,5 +1,5 @@
 [project]
-name = "trading-bot"
+name = "tidewatch"
 version = "0.1.0"
 description = "Automated Binance spot trader with OCO exits and a capital-gains ledger"
 requires-python = ">=3.11"

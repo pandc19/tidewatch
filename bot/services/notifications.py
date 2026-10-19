@@ -24,7 +24,7 @@ from decimal import Decimal
 
 import aiohttp
 
-from bot.config.settings import Settings
+from bot.config.settings import APP_NAME, Settings
 from bot.database.models import KillSwitchEvent, Order, Position
 from bot.engine.ledger import TradeResult
 from bot.engine.state_machine import EngineObserver
@@ -230,7 +230,7 @@ class MessageFormatter:
         self.mode = mode_label(settings)
 
     def _head(self, title: str) -> str:
-        return f"<b>[{_e(self.mode)}]</b> {_e(self._s.app_name)}\n<b>{_e(title)}</b>\n"
+        return f"<b>[{_e(self.mode)}]</b> {_e(APP_NAME)}\n<b>{_e(title)}</b>\n"
 
     def _asset(self, symbol: str) -> str:
         quote = self._s.quote_asset

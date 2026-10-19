@@ -25,7 +25,13 @@ python3 -m venv .venv
 .venv/bin/pip install -e . --group dev
 ```
 
-Either way, run tools as `.venv/bin/pytest`, `.venv/bin/alembic`, and so on. You can also `source .venv/bin/activate` once per terminal and drop the `.venv/bin/` prefix; inside the venv `python` and `python3` are the same interpreter.
+Either way, run tools as `.venv/bin/pytest`, `.venv/bin/alembic`, and so on. Or activate the virtualenv once per terminal and drop the `.venv/bin/` prefix:
+
+```bash
+source .venv/bin/activate    # prompt shows (tidewatch) or (.venv); `deactivate` leaves it
+```
+
+Inside the venv `python` and `python3` are the same interpreter. The commands below keep the `.venv/bin/` prefix so they work either way.
 
 ## 2. Configure
 
@@ -69,7 +75,7 @@ Public data (filters, prices) needs no keys, so steps 1-5 work without them. To 
 
 Without this the bot works and alerts are log lines only. To get them on your phone:
 
-1. In Telegram, open **@BotFather**, send `/newbot`, pick a name and a username. BotFather replies with a **token** (looks like `123456789:AA...`). Treat it like a password: anyone with it can send messages as your bot. Never paste it into a chat, a ticket or a commit.
+1. In Telegram, open **@BotFather**, send `/newbot`, pick a name (**Tidewatch**) and a username (`tidewatch_japc_bot`; it must end in `bot` and be unique, so use your own if it is taken). BotFather replies with a **token** (looks like `123456789:AA...`). Treat it like a password: anyone with it can send messages as your bot. Never paste it into a chat, a ticket or a commit.
 2. Put it in `.env` as `TELEGRAM_BOT_TOKEN=...`.
 3. Open your new bot in Telegram, press **Start** and send it any message. A bot cannot message you first.
 4. Run `.venv/bin/python -m bot.services.notifications --find-chat-id`. It prints the id and name of each chat that recently messaged the bot (never the token). Put your id in `.env` as `TELEGRAM_CHAT_ID=...`. If it finds nothing, send the bot another message and run it again.

@@ -79,7 +79,7 @@ def fmt(**env) -> MessageFormatter:
 
 
 def test_every_message_carries_the_mode_and_the_app_name():
-    f = fmt(DRY_RUN="false", BINANCE_TESTNET="false", APP_NAME="my-bot")
+    f = fmt(DRY_RUN="false", BINANCE_TESTNET="false")
     texts = [
         f.entry_placed(position(), order()),
         f.entry_cancelled(position(), order(cancel_reason=CancelReason.ENTRY_TIMEOUT)),
@@ -90,7 +90,7 @@ def test_every_message_carries_the_mode_and_the_app_name():
         f.started(), f.stopped(), f.test(),
     ]
     for text in texts:
-        assert "<b>[LIVE]</b> my-bot" in text, text
+        assert "<b>[LIVE]</b> Tidewatch" in text, text
     assert "[LIVE]" not in fmt(DRY_RUN="true").started() and "[DRY RUN]" in fmt(DRY_RUN="true").started()
 
 
@@ -161,11 +161,10 @@ def test_started_lists_mode_symbols_and_targets():
 
 def test_dynamic_values_are_html_escaped():
     evil = "<script>&\"x\"</script>"
-    f = fmt(APP_NAME="a&b")
+    f = fmt()
     for text in (f.attention(evil), f.reminder(evil), f.entry_placed(position(symbol="A<B>USDT"), order())):
         assert "<script>" not in text and "A<B>" not in text
     assert "&lt;script&gt;&amp;" in f.attention(evil)
-    assert "a&amp;b" in f.attention("x")
 
 
 def test_long_text_is_truncated_without_breaking_the_markup():

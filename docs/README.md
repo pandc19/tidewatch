@@ -4,6 +4,7 @@
 
 - [GETTING_STARTED.md](../GETTING_STARTED.md): local setup
 - [SETUP_CHECKLIST.md](../SETUP_CHECKLIST.md): every external piece to set up, in order, with how to check it and what is unverified
+- [TESTING.md](../TESTING.md): manual test plan, with the reading list to do first
 - [guides/code-flow.md](guides/code-flow.md): how one trade moves through the system, and why
 - [guides/developer-guide.md](guides/developer-guide.md): conventions, tests, migrations, adding things
 

@@ -1,5 +1,5 @@
-# Project name follows APP_NAME from .env, so renaming the app renames the stack.
-name: ${APP_NAME:-trading-bot}
+# The compose project name is the app name in lowercase (see APP_NAME in bot/config/settings.py).
+name: tidewatch
 
 services:
   app:
