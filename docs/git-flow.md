@@ -4,7 +4,7 @@ How a change gets from a branch to `main`, and from `main` to the server. The sa
 
 ## Branching
 
-One long-lived branch, `main`. It is always deployable, and once Coolify is set up **every merge to `main` deploys**. Work happens on short-lived branches and reaches `main` only through a pull request.
+One long-lived branch, `main`. It is always deployable, and once Coolify is set up **every merge to `main` deploys** ([coolify.md](coolify.md)). Work happens on short-lived branches and reaches `main` only through a pull request.
 
 ```
   feat/xyz  ──PR + CI──▶  main  ──push──▶  Coolify builds the Dockerfile on the droplet

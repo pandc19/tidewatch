@@ -1,0 +1,86 @@
+# Deploying with Coolify
+
+Tidewatch deploys the same way poketrain does: a push to `main` makes Coolify build the [Dockerfile](../Dockerfile) on the droplet and start the new container. The branching rules that feed it are in [git-flow.md](git-flow.md). The server, Traefik and `shared-postgres` are the ones described in poketrain's deployment reference (`shared-infra` creates them); this page covers only what is specific to the bot.
+
+**Status:** the image is built and its parts checked locally (user, files, health check logic). **Nothing here has run on Coolify.** Items marked *verify* are things I could not check from the repo; confirm each once in the dashboard and tick the checklist at the bottom.
+
+## How Tidewatch differs from a web app
+
+| Poketrain (web app) | Tidewatch (bot) |
+|---|---|
+| Has a port, a domain, TLS | **No port, no domain.** It only makes outbound connections (Binance, Telegram, PostgreSQL) |
+| Health check = HTTP `/api/health` | Health check = a heartbeat file the engine touches every tick (`python -m bot.instance`) |
+| Two copies running for a moment is harmless | Two engines on one database could both place orders. The instance lock (`bot/instance.py`) makes the new container wait until the old one has stopped |
+| Rolling update, then the old container stops | Same, but the new container sits waiting for the lock (still beating, so it counts as healthy) until Coolify stops the old one, then takes over and reconciles |
+
+## Coolify: application settings
+
+| Setting | Value |
+|---|---|
+| Source | GitHub App, repository `pandc19/tidewatch`, branch `main` |
+| Build pack | Dockerfile (`/Dockerfile`) |
+| Ports exposed | none. *Verify* that Coolify accepts an application with no port and no domain |
+| Domain | none |
+| Auto deploy | on (gated by the GitHub ruleset in [git-flow.md](git-flow.md)) |
+| Health check | Coolify's own: **off**. The image's `HEALTHCHECK` is the one to use. *Verify* in the dashboard that the application shows **healthy** after a deploy, which means Coolify reads the image's check |
+| Stop timeout | **40 s or more.** The bot flushes alerts and closes the Binance stream on SIGTERM, which takes up to about 20 s. Compose sets 40 s; the Dockerfile cannot. *Verify* where Coolify sets it (custom Docker options `--stop-timeout 40`, or its setting) |
+| Restart | always/unless-stopped is fine once it runs well; a crash loop is visible in the logs |
+| Server | `shared-apps-1` |
+
+### Environment variables
+
+All **runtime** variables. Untick "Available at Buildtime" on the secrets: build-time variables are passed to `docker build` and can be read from image layers. The build needs none of them.
+
+| Variable | Value / notes |
+|---|---|
+| `DATABASE_URL` | `postgresql+asyncpg://tidewatch_app:<password>@<shared-postgres internal host>:5432/<database>`. Percent-encode special characters. A provider-style `postgres://…?sslmode=require` is also accepted |
+| `BINANCE_TESTNET` | `true` for the rehearsal. `false` only after the gate in [SETUP_CHECKLIST.md](../SETUP_CHECKLIST.md) section 8 |
+| `DRY_RUN` | `false` to rehearse with orders on the testnet, `true` to send nothing |
+| `BINANCE_API_KEY`, `BINANCE_API_SECRET` | secrets. Testnet keys for the rehearsal |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | secrets. The alerts say `[TESTNET]`, `[DRY RUN]` or `[LIVE]` |
+| `ORDER_ID_PREFIX` | leave the default (`bot`) unless two sending bots share one account (untested) |
+| strategy settings | the rest of [.env.example](../.env.example): `SYMBOLS`, `TAKE_PROFIT_PCT`, `STOP_LOSS_PCT`, `ALLOCATION_PCT`, `DAILY_LOSS_LIMIT_PCT`, … |
+
+Keep this table and `.env.example` in sync when a variable is added. The names `HEARTBEAT_*` and `INSTANCE_LOCK_WAIT_SECONDS` have good defaults and need not be set.
+
+## The database
+
+- One database per purpose on `shared-postgres`, role `tidewatch_app` (`NOSUPERUSER NOCREATEDB NOCREATEROLE`, owns only its databases, `CONNECT` revoked from `PUBLIC`), as for poketrain.
+- **Rehearsal:** database `tidewatch_testnet`. **Real money, later:** a different database whose name contains `prod` or `live`. The startup guard refuses `BINANCE_TESTNET=false` with a `testnet` name and `BINANCE_TESTNET=true` with a `prod`/`live` name ([running-modes.md](guides/running-modes.md)).
+- The migrations run at every container start (`alembic upgrade head`), and the role needs to create tables.
+- **Migrations run while the old container may still be running.** Write them so the previous code can live with them (add columns nullable or with a default; drop or rename in a later PR). A failed migration stops the new container, and the old one keeps running.
+- The `tax_ledger` is the capital-gains record. It needs the same backup care as poketrain's database: a scheduled backup, and a restore tested at least once.
+
+## What a deploy does to a running bot
+
+1. Merge to `main`; Coolify builds the image (about a minute; the image is small).
+2. The new container runs `alembic upgrade head`, the startup checks, then **waits for the instance lock**, beating its heartbeat.
+3. Coolify sees it healthy and stops the old container (SIGTERM, clean shutdown within the stop timeout). PostgreSQL frees the lock the moment that process ends, even if it is killed.
+4. The new container takes the lock, reconciles with Binance, and carries on. Open positions keep their exit orders on the exchange throughout; the bot never sells by itself.
+5. If the new container never gets the lock (10 minutes by default) or dies, the deployment fails and the old one keeps running.
+
+Not seen yet in a real deploy. The first one should be done with `DRY_RUN=true`, then with a testnet position open, to watch step 3 and 4.
+
+## Binance and the server
+
+- **Region.** Binance refuses US addresses ("Service unavailable from a restricted location"). *Verify* the droplet's region and that Binance answers from it before relying on it: a keyless request to `https://api.binance.com/api/v3/time` from the droplet must return JSON, not an HTTP 451.
+- **API key IP restriction.** With real keys, restrict the key to the droplet's reserved IP. The testnet needs no restriction.
+- Withdrawals stay off on every key.
+
+## Day to day
+
+- Logs: Coolify's log view for the application (the bot logs to stdout).
+- Health: the application's status (healthy/unhealthy) is the heartbeat. Unhealthy means no engine tick for 3 minutes. Nothing alerts you yet ([NEXT_STEPS.md](../NEXT_STEPS.md)).
+- Stop the bot cleanly from Coolify (Stop), not by deleting the container.
+- Secrets live only in Coolify and the local `.env`.
+
+## Checklist: what only exists in the dashboards
+
+- [ ] Coolify: application created from the GitHub App, Dockerfile build pack, no port or domain accepted
+- [ ] Coolify: all variables set as runtime-only, secrets unticked for build time
+- [ ] Coolify: the application shows **healthy** after a deploy (the image's check is read)
+- [ ] Coolify: stop timeout 40 s or more
+- [ ] Postgres: database and role created, `CONNECT` revoked from `PUBLIC`, a backup schedule, one test restore
+- [ ] Binance answers from the droplet (HTTP 200 on `/api/v3/time`)
+- [ ] A first deploy with `DRY_RUN=true`: logs show the lock acquired and the scan line; a second deploy shows the new container waiting, then taking over
+- [ ] GitHub: the `main` ruleset and settings from [git-flow.md](git-flow.md), with `check` required
