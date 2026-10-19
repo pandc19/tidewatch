@@ -2,7 +2,7 @@
 
 A push to `main` makes Coolify build the [Dockerfile](../Dockerfile) on the droplet and start the new container. The branching rules that feed it are in [git-flow.md](git-flow.md). The droplet (`shared-apps-1`), Traefik and `shared-postgres` are shared with other apps and are created by the `shared-infra` repo; this page covers only what is specific to the bot.
 
-**Status:** the image is built and checked locally, including the container hand-over: two containers on one database, the second waits (healthy) and takes over after `docker stop` or `kill -9` of the first, and a waiter that times out exits 1 (2026-10-19, keyless dry-run, throwaway database). **Nothing here has run on Coolify.** Items marked *verify* are things I could not check from the repo; confirm each once in the dashboard and tick the checklist at the bottom.
+**Status:** the image is built and checked locally, including the container hand-over: two containers on one database, the second waits (healthy) and takes over after `docker stop` or `kill -9` of the first, and a waiter that times out exits 1 (2026-10-19, keyless dry-run, throwaway database). **First Coolify deploy, 2026-10-19:** Coolify accepted the application with no port, built the image from the Dockerfile (about a minute), found the image's health check, waited out the full 120 s start period, and the deployment finished; the bot sent its "started" Telegram message tagged `[TESTNET]` (so `DRY_RUN=false` on the testnet). Not yet seen on Coolify: a redeploy over a running container (the hand-over), the stop timeout, and Binance reachability from the droplet beyond the startup checks passing. Items marked *verify* are things I could not check from the repo; confirm each once in the dashboard and tick the checklist at the bottom.
 
 ## How Tidewatch differs from a web app
 
@@ -19,10 +19,10 @@ A push to `main` makes Coolify build the [Dockerfile](../Dockerfile) on the drop
 |---|---|
 | Source | GitHub App, repository `pandc19/tidewatch`, branch `main` |
 | Build pack | Dockerfile (`/Dockerfile`) |
-| Ports exposed | none. *Verify* that Coolify accepts an application with no port and no domain |
+| Ports exposed | none. Coolify accepted this (first deploy). It may generate a domain for the app; remove it, nothing listens |
 | Domain | none |
 | Auto deploy | on (gated by the GitHub ruleset in [git-flow.md](git-flow.md)) |
-| Health check | Coolify's own: **off**. The image's `HEALTHCHECK` is the one to use. *Verify* in the dashboard that the application shows **healthy** after a deploy, which means Coolify reads the image's check |
+| Health check | Coolify's own: **off**. The image's `HEALTHCHECK` is used: the deploy log says "Custom healthcheck found in Dockerfile" and the application's health check setting shows it. Coolify waits the whole start period (120 s) before the first check, so a deploy takes at least 2 minutes |
 | Stop timeout | **40 s or more.** The bot flushes alerts and closes the Binance stream on SIGTERM, which takes up to about 20 s. Compose sets 40 s; the Dockerfile cannot. *Verify* where Coolify sets it (custom Docker options `--stop-timeout 40`, or its setting) |
 | Restart | always/unless-stopped is fine once it runs well; a crash loop is visible in the logs |
 | Server | `shared-apps-1` |
@@ -76,11 +76,12 @@ Steps 2 to 4 are seen with plain containers (see Status), not yet with Coolify d
 
 ## Checklist: what only exists in the dashboards
 
-- [ ] Coolify: application created from the GitHub App, Dockerfile build pack, no port or domain accepted
+- [x] Coolify: application created from the GitHub App, Dockerfile build pack, no port accepted (2026-10-19)
 - [ ] Coolify: all variables set as runtime-only, secrets unticked for build time
-- [ ] Coolify: the application shows **healthy** after a deploy (the image's check is read)
+- [x] Coolify: the image's health check is read and the first deploy finished (2026-10-19)
 - [ ] Coolify: stop timeout 40 s or more
 - [ ] Postgres: database and role created, `CONNECT` revoked from `PUBLIC`, a backup schedule, one test restore
 - [ ] Binance answers from the droplet (HTTP 200 on `/api/v3/time`)
-- [ ] A first deploy with `DRY_RUN=true`: logs show the lock acquired and the scan line; a second deploy shows the new container waiting, then taking over
+- [x] A first deploy: it ran and sent its "started" alert (with `DRY_RUN=false` on the testnet, not the dry run first suggested)
+- [ ] A second deploy over the running container shows the new one waiting, then taking over
 - [ ] GitHub: the `main` ruleset and settings from [git-flow.md](git-flow.md), with `check` required
