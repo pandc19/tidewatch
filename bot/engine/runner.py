@@ -8,6 +8,7 @@ from typing import Protocol
 
 from bot.config.settings import Settings
 from bot.engine.state_machine import TradingEngine
+from bot.instance import Heartbeat
 from bot.services.binance_client import ExchangeClient
 from bot.services.user_stream import UserStream
 
@@ -28,8 +29,10 @@ class EngineRunner:
         settings: Settings,
         *,
         stream: Stream | None = None,
+        heartbeat: Heartbeat | None = None,
     ):
         self._engine = engine
+        self._heartbeat = heartbeat
         self._settings = settings
         # Dry-run sends no orders and has nothing to hear about; without keys the stream
         # cannot open. In both cases only the tick runs.
@@ -63,6 +66,8 @@ class EngineRunner:
 
     async def _tick_loop(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
+            if self._heartbeat:
+                self._heartbeat.beat()  # before the tick: a tick that hangs stops the beat
             try:
                 await self._engine.tick()
             except Exception:

@@ -20,6 +20,7 @@ from bot.config.settings import APP_NAME, Settings, get_settings
 from bot.database.connection import Database
 from bot.engine.runner import EngineRunner
 from bot.engine.state_machine import EntrySource, NoEntries, TradingEngine
+from bot.instance import Heartbeat, InstanceLock
 from bot.services.binance_client import ExchangeClient, ExchangeError
 from bot.services.notifications import NotificationService, build_notifier, send_test_message
 from bot.services.reconciliation import reconcile
@@ -123,6 +124,26 @@ async def _config_checks(settings: Settings, exchange: ExchangeClient, free_quot
 
 
 async def _run_engine(settings: Settings, db: Database, exchange: ExchangeClient) -> int:
+    heartbeat = Heartbeat(settings.heartbeat_path)
+    lock = InstanceLock(db.engine)
+    try:
+        # Only one engine per database. During a deploy the new container waits here, beating, so
+        # the platform sees it alive and stops the old one; nothing is placed until it is gone.
+        if not await lock.acquire(settings.instance_lock_wait_seconds, heartbeat):
+            log.error(
+                "another instance still holds this database after %ss: not starting",
+                settings.instance_lock_wait_seconds,
+            )
+            return 1
+        log.info("instance lock acquired")
+        return await _engine_with_lock(settings, db, exchange, heartbeat, lock)
+    finally:
+        await lock.release()
+
+
+async def _engine_with_lock(
+    settings: Settings, db: Database, exchange: ExchangeClient, heartbeat: Heartbeat, lock: InstanceLock
+) -> int:
     source: EntrySource
     if settings.has_binance_credentials:
         source = Scanner(settings, exchange)
@@ -149,16 +170,18 @@ async def _run_engine(settings: Settings, db: Database, exchange: ExchangeClient
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
+    watcher = asyncio.ensure_future(lock.watch(stop))
     try:
         if alerts:
             alerts.announce_started()
-        await EngineRunner(engine, exchange, settings).run(stop)
+        await EngineRunner(engine, exchange, settings, heartbeat=heartbeat).run(stop)
         if alerts:
             alerts.announce_stopped()
     finally:
+        watcher.cancel()
         if alerts:
             await alerts.close()  # flushes what it can, within a time limit
-    return 0
+    return 1 if lock.lost else 0
 
 
 async def _account_checks(settings: Settings, exchange: ExchangeClient):
