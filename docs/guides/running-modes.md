@@ -41,6 +41,20 @@ Every database and every machine using the same testnet keys shares one wallet a
 - **Never point two running bots at the same database.**
 - A dry-run bot with an `OPEN` position in its database whose OCO is real on the exchange will never notice the fill: the record goes stale. Close such a position (or cancel its OCO and reset the database) before switching to dry run.
 
+## One engine per database (the instance lock)
+
+The engine takes a PostgreSQL advisory lock (`bot/instance.py`) before it does anything else, and keeps it for as long as it runs. A second engine on the same database waits (up to `INSTANCE_LOCK_WAIT_SECONDS`, default 600) and exits if the first never stops. PostgreSQL frees the lock the moment the first process ends, however it died.
+
+- This is what makes a platform deploy safe: the new container waits, the platform stops the old one, the new one takes over and reconciles. Without it, both could place orders for a minute.
+- It is per database. Two bots on different databases are not stopped by it; use the rules above.
+- `--check-only` does not take the lock, so it runs alongside a running bot.
+- If the lock's connection is lost (a database restart), the engine stops with exit code 1 rather than keep trading without it.
+- Not yet seen end to end with a real container deploy; the lock and watcher are tested against a real PostgreSQL.
+
+## The heartbeat
+
+The engine touches `HEARTBEAT_PATH` every tick (also while waiting for the lock). `python -m bot.instance --path ... --max-age N` exits 1 if the file is missing or older than N seconds; the Docker `HEALTHCHECK` will use it. A hung tick stops the beat, so the container shows as unhealthy. It does not alert anyone by itself.
+
 ## Starting over
 
 To empty a database and leave nothing behind on the exchange:
