@@ -155,6 +155,7 @@ def test_entry_cancelled_names_the_reason():
 
 
 def test_started_lists_mode_symbols_and_targets():
+    assert "dynamic, top 12 (up to medium risk)" in fmt(SYMBOLS_AUTO="true").started()
     text = fmt(SYMBOLS="SOLUSDT,ETHUSDT").started()
     assert "SOLUSDT, ETHUSDT" in text and "4.00%" in text and "2.00%" in text
 

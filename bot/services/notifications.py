@@ -345,11 +345,17 @@ class MessageFormatter:
             f"{self._asset(position.symbol)} has its stop-loss in place again."
         )
 
+    def _symbols_line(self) -> str:
+        s = self._s
+        if s.symbols_auto:  # the list is chosen after start, so say how, not which
+            return f"dynamic, top {s.symbols_auto_count} (up to {s.symbols_auto_max_risk} risk)"
+        return ", ".join(s.symbols)
+
     def started(self) -> str:
         s = self._s
         return self._head("Bot started") + _table(
             [
-                ("Symbols", ", ".join(s.symbols)),
+                ("Symbols", self._symbols_line()),
                 ("Take-profit", f"{s.take_profit_pct:.2%}"),
                 ("Stop-loss", f"{s.stop_loss_pct:.2%}"),
             ]
