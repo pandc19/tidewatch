@@ -250,6 +250,10 @@ class ExchangeClient:
         d = await self._client.get_orderbook_ticker(symbol=symbol)
         return BookTicker(symbol, to_decimal(d["bidPrice"]), to_decimal(d["askPrice"]))
 
+    async def tickers_24h(self) -> list[dict[str, Any]]:
+        """Rolling 24h statistics of every pair (one call, public). Raw rows: callers pick fields."""
+        return await self._client.get_ticker()
+
     async def closed_candle_closes(self, symbol: str, interval: str, limit: int = 100) -> list[Decimal]:
         """Closing prices of the last `limit` *finished* candles, oldest first.
 

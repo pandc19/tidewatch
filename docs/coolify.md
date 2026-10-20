@@ -41,7 +41,7 @@ All **runtime** variables. Untick "Available at Buildtime" on the secrets: build
 | `REPORT_TIMEZONE` | days in the sales report; default `America/Guayaquil` |
 | `TELEGRAM_COMMANDS` | `true` to answer `/status`, `/csv`, `/report` and `/help` (read-only, ADR-008). Set it only here, not on a laptop that shares the token |
 | `ORDER_ID_PREFIX` | leave the default (`bot`) unless two sending bots share one account (untested) |
-| strategy settings | the rest of [.env.example](../.env.example): `SYMBOLS`, `TAKE_PROFIT_PCT`, `STOP_LOSS_PCT`, `ALLOCATION_PCT`, `DAILY_LOSS_LIMIT_PCT`, … |
+| strategy settings | the rest of [.env.example](../.env.example): `SYMBOLS`, `SYMBOLS_AUTO` (+ `_COUNT`, `_MIN_VOLUME`, `_MAX_RISK`, `_REFRESH_MINUTES`), `TAKE_PROFIT_PCT`, `STOP_LOSS_PCT`, `ALLOCATION_PCT`, `DAILY_LOSS_LIMIT_PCT`, … |
 
 Keep this table and `.env.example` in sync when a variable is added. The names `HEARTBEAT_*` and `INSTANCE_LOCK_WAIT_SECONDS` have good defaults and need not be set.
 

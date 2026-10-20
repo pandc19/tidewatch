@@ -154,7 +154,9 @@ async def _engine_with_lock(
         source = Scanner(settings, exchange)
         log.info(
             "scanning %s every %ss on %s candles (RSI<=%s then an EMA(%s) cross-up)%s",
-            ",".join(settings.symbols), settings.scan_every_seconds, settings.scan_interval,
+            f"the dynamic list (top {settings.symbols_auto_count} by volume, up to {settings.symbols_auto_max_risk} risk)"
+            if settings.symbols_auto else ",".join(settings.symbols),
+            settings.scan_every_seconds, settings.scan_interval,
             settings.rsi_oversold, settings.ema_period,
             " [DRY RUN: entries are recorded, never sent]" if settings.dry_run else "",
         )

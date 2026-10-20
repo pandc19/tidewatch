@@ -99,6 +99,7 @@ class FakeBinance:
         self.orders: dict[int, dict[str, Any]] = {}
         self.trades: dict[int, list[dict[str, Any]]] = {}
         self.klines: dict[str, list[list]] = {}
+        self.ticker_rows: list[dict[str, Any]] = []  # 24h statistics of every pair
         self.tickers: dict[str, tuple[str, str]] = {}  # per-symbol (bid, ask) overrides
         self.open: list[dict[str, Any]] | None = None  # None: computed from live orders
         self.raise_on: dict[str, Exception] = {}
@@ -280,6 +281,10 @@ class FakeBinance:
         if "orderId" in kw:
             return self.trades.get(kw["orderId"], [])
         return [t for ts in self.trades.values() for t in ts][-kw.get("limit", 500):]
+
+    async def get_ticker(self, **kw):
+        self._rec("get_ticker", kw)
+        return self.ticker_rows
 
     async def get_klines(self, **kw):
         self._rec("get_klines", kw)

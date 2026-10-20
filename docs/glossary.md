@@ -7,7 +7,8 @@ The trading and operations words used in this project, with the meaning they hav
 | Term | Meaning |
 |---|---|
 | **Spot** | Buying and selling the actual coin, immediately. No borrowing, no leverage, no futures. This bot only trades spot. |
-| **Symbol / pair** | A market such as `BTCUSDT`. `SYMBOLS` lists the ones the bot scans (BTC, ETH, SOL). |
+| **Symbol / pair** | A market such as `BTCUSDT`. `SYMBOLS` lists the ones the bot scans (BTC, ETH, SOL), or with `SYMBOLS_AUTO=true` the most traded pairs up to a risk tier (ADR-009). |
+| **Risk tier** | `low`, `medium` or `high`, from how far a pair moved in the last 24 hourly candles. It measures how often a 2% stop-loss would be hit, not which pair will gain. |
 | **Base asset / quote asset** | In `BTCUSDT`, BTC is the base (what you buy) and USDT is the quote (what you pay with). `QUOTE_ASSET=USDT`. |
 | **USDT** | A coin pegged to the US dollar. The tax ledger treats it as USD (an accountant should confirm that is acceptable). |
 | **Wallet: free / locked** | Free balance is what the bot can spend. Balance reserved by an open order is locked. The bot sizes trades on the free quote balance. |
