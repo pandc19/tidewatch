@@ -21,7 +21,15 @@ class FakeTelegram:
         self.requests: list[dict] = []
 
     async def handle(self, request: web.Request) -> web.Response:
-        body = await request.json()
+        if request.content_type.startswith("multipart/"):
+            form = await request.post()
+            body = {
+                key: value if isinstance(value, str)
+                else {"filename": value.filename, "content": value.file.read().decode(), "type": value.content_type}
+                for key, value in form.items()
+            }
+        else:
+            body = await request.json()
         self.requests.append({"path": request.path, "body": body})
         index = min(len(self.requests) - 1, len(self.responses) - 1)
         status, payload = self.responses[index]
@@ -207,3 +215,56 @@ def test_chats_from_updates_lists_ids_and_names_once():
     ]
 
     assert chats_from_updates(updates) == {7: "Ana Lopez (@ana)", -100: "Alerts"}
+
+
+async def test_poll_updates_sends_the_long_poll_fields_and_returns_the_list(serve):
+    updates = [{"update_id": 9, "message": {"text": "/status"}}]
+    fake, notifier, _ = await serve((200, {"ok": True, "result": updates}))
+
+    assert await notifier.poll_updates(10, 25) == updates
+
+    (request,) = fake.requests
+    assert request["path"] == f"/bot{TOKEN}/getUpdates"
+    assert request["body"] == {"offset": 10, "timeout": 25, "limit": 20, "allowed_updates": ["message"]}
+
+
+async def test_poll_updates_without_an_offset_omits_it_and_a_conflict_is_not_retried(serve):
+    fake, notifier, _ = await serve((409, {"ok": False, "description": "Conflict: terminated by other getUpdates request"}))
+
+    with pytest.raises(NotifierError) as err:
+        await notifier.poll_updates(None, 0)
+
+    assert "409" in str(err.value) and TOKEN not in str(err.value)
+    assert "offset" not in fake.requests[0]["body"] and len(fake.requests) == 1
+
+
+async def test_send_document_uploads_the_file_as_multipart(serve):
+    fake, notifier, _ = await serve(OK)
+
+    await notifier.send_document("ventas_2026-10.txt", b"a\tb\n", "2 filas")
+
+    (request,) = fake.requests
+    assert request["path"] == f"/bot{TOKEN}/sendDocument"
+    assert request["body"] == {
+        "chat_id": CHAT, "caption": "2 filas", "parse_mode": "HTML",
+        "document": {"filename": "ventas_2026-10.txt", "content": "a\tb\n", "type": "text/plain"},
+    }
+
+
+async def test_a_csv_is_typed_and_an_upload_is_retried_with_a_fresh_form(serve):
+    fake, notifier, slept = await serve((500, {"ok": False}), OK)
+
+    await notifier.send_document("ledger.csv", b"x,y\n")
+
+    assert len(fake.requests) == 2 and slept  # one retry, after a backoff
+    assert fake.requests[1]["body"]["document"] == {"filename": "ledger.csv", "content": "x,y\n", "type": "text/csv"}
+    assert "caption" not in fake.requests[1]["body"]
+
+
+async def test_a_refused_upload_does_not_leak_the_token(serve):
+    _, notifier, _ = await serve((400, {"ok": False, "description": f"Bad Request: bot {TOKEN} chat not found"}))
+
+    with pytest.raises(NotifierError) as err:
+        await notifier.send_document("x.txt", b"x")
+
+    assert TOKEN not in str(err.value) and "400" in str(err.value)

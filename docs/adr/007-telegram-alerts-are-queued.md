@@ -16,7 +16,7 @@ The owner needs to hear about a fill, a protected position, a closed trade, a ki
 - **Every message names the mode**, `[LIVE]`, `[TESTNET]` or `[DRY RUN]` (dry run wins), so practice alerts cannot be mistaken for real money.
 - **Token hygiene.** The token is a `SecretStr`, read only where the URL is built. Errors raised by the notifier carry the exception class and Telegram's own description with the token scrubbed, never aiohttp's text (which can contain the URL), and are raised without the chained exception. Unknown errors in the worker log only their class name.
 - **Telegram is optional.** Without a token and chat id the engine keeps the default no-op observer and the bot logs one warning that alerts go to the log only.
-- **Notifications only.** No commands are accepted from the chat (NEXT_STEPS, later).
+- **Notifications only.** The alert path sends and never reads. Read-only commands are a separate task with their own rules: ADR-008.
 
 ## Consequences
 - Alerts are best effort. A message can be dropped (full queue), lost on shutdown (flush limit), or fail after retries; the log still has the CRITICAL lines for the serious cases.

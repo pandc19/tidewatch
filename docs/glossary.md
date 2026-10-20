@@ -52,6 +52,8 @@ The trading and operations words used in this project, with the meaning they hav
 | **Net profit / return %** | Realised PnL after fees; the same as a share of the cost. |
 | **Break-even win rate** | The share of trades that must hit the take-profit to cover the stops and the fees. With a 4% target, a 2% stop and 0.2% fees it is **36.7%**. The replay won 33%. |
 | **Edge** | A real, repeatable advantage. The entry signal has **no demonstrated edge** (ADR-006): do not call it profitable. |
+| **Reporte de ventas (sales sheet)** | The ledger as `Venta` rows in the owner's spreadsheet columns: Fecha, Plataforma, Tipo, Motivo, Observaciones, Cantidad Operada, Precio Unitario de Compra / de Venta, Monto Directo, Monto. Tab-separated Spanish format, Ecuador dates, no fees. `Monto Directo` = quantity x sell price; `Monto` = gross profit. |
+| **Gross vs net profit** | Gross is quantity x (sell price - buy price), what the sheet records. Net is what the bot books after fees are subtracted (never added), so it is a little lower. The CSV has both the fees and the net. |
 | **Tax ledger** | One row per closed trade: prices, totals, fees, net profit, UTC timestamps. The record for capital-gains reporting (`tax_exporter`). |
 
 ## Fees and exchange limits
@@ -89,6 +91,8 @@ The trading and operations words used in this project, with the meaning they hav
 | **Account stream** | Binance's live feed of changes to your orders and balance (user data stream). Off in dry-run. |
 | **Polling safety net** | Re-reading live orders over REST every tick, so a missed stream event is corrected. |
 | **Engine tick** | The engine's periodic check (`ENGINE_TICK_SECONDS=30`): entry timeouts, unprotected positions, new entries. |
+| **Command (Telegram)** | A message such as `/status` sent to the bot. Read-only, answered only for `TELEGRAM_CHAT_ID`, and only when `TELEGRAM_COMMANDS=true` (ADR-008). Stale ones from before a restart are skipped. |
+| **Long polling** | How the bot listens: it asks Telegram "anything new?" and Telegram holds the request open up to 25 seconds. Only one process may do it per token (a second gets 409 Conflict). |
 | **Observer hook / alert queue** | Alerts are queued by the engine and sent separately, so a slow Telegram can never delay a trade (ADR-007). |
 
 ## Modes

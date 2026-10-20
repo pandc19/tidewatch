@@ -38,6 +38,8 @@ All **runtime** variables. Untick "Available at Buildtime" on the secrets: build
 | `DRY_RUN` | `false` to rehearse with orders on the testnet, `true` to send nothing |
 | `BINANCE_API_KEY`, `BINANCE_API_SECRET` | secrets. Testnet keys for the rehearsal |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | secrets. The alerts say `[TESTNET]`, `[DRY RUN]` or `[LIVE]` |
+| `REPORT_TIMEZONE` | days in the sales report; default `America/Guayaquil` |
+| `TELEGRAM_COMMANDS` | `true` to answer `/status`, `/csv`, `/report` and `/help` (read-only, ADR-008). Set it only here, not on a laptop that shares the token |
 | `ORDER_ID_PREFIX` | leave the default (`bot`) unless two sending bots share one account (untested) |
 | strategy settings | the rest of [.env.example](../.env.example): `SYMBOLS`, `TAKE_PROFIT_PCT`, `STOP_LOSS_PCT`, `ALLOCATION_PCT`, `DAILY_LOSS_LIMIT_PCT`, … |
 

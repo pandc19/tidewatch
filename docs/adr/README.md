@@ -13,6 +13,7 @@ An ADR records a significant technical decision: the context, the decision, and 
 | [005](005-engine-evaluates-state.md) | The engine evaluates state, persists before sending, and does not repair what the owner cancels | Accepted |
 | [006](006-risk-controls-and-the-entry-signal.md) | Risk controls, the owner's manual actions, and an honest entry signal | Accepted |
 | [007](007-telegram-alerts-are-queued.md) | Telegram alerts are queued, sent as HTML, and never carry the token | Accepted |
+| [008](008-read-only-telegram-commands.md) | Telegram commands are read-only, owner-only, and opt-in | Accepted |
 
 ## Template
 

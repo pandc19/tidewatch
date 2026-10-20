@@ -11,6 +11,7 @@ from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -112,6 +113,20 @@ class Settings(BaseSettings):
     unprotected_reminder_minutes: int = Field(default=15, ge=0)
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
+    # Answer read-only commands (/status) from that chat. Off by default: only one process can poll
+    # a bot token at a time, so a laptop sharing the token with a server must leave it off (ADR-008).
+    telegram_commands: bool = False
+    # Dates in the sales report (bot.reports.sales_sheet) are days in this zone, not UTC.
+    report_timezone: str = "America/Guayaquil"
+
+    @field_validator("report_timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"REPORT_TIMEZONE '{value}' is not a known time zone (for example America/Guayaquil)") from exc
+        return value
 
     @field_validator("database_url")
     @classmethod

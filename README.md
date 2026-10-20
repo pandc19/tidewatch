@@ -43,7 +43,7 @@ bot/
 │   ├── runner.py             Stream + tick loop, clean shutdown
 │   └── ledger.py             Profit/loss of a closed trade
 ├── reports/
-│   └── tax_exporter.py   Export the tax ledger to CSV (per UTC year)
+│   └── tax_exporter.py   Export the tax ledger to CSV (per year, by Ecuador days)
 └── main.py               Entrypoint
 migrations/               Alembic migrations
 scripts/local.sh          Run the bot on this machine in the background (start, stop, status, logs; `start demo` for a fast testnet tour)

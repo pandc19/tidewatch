@@ -117,26 +117,45 @@ class TelegramNotifier(Notifier):
             },
         )
 
+    async def send_document(self, filename: str, content: bytes, caption: str | None = None) -> None:
+        """Send a file to the chat (`sendDocument`, multipart). `caption` is HTML, escape it first."""
+        fields = {"chat_id": self._chat_id}
+        if caption:
+            fields.update({"caption": caption, "parse_mode": "HTML"})
+        await self._call("sendDocument", fields, file=("document", filename, content))
+
+    async def poll_updates(self, offset: int | None, timeout: int) -> list[dict]:
+        """Long-poll for new messages (`timeout` seconds). `offset` confirms everything before it.
+
+        Build the notifier with an HTTP timeout longer than `timeout`. Only one process may poll a
+        token at a time: a second poller gets 409 Conflict.
+        """
+        payload: dict = {"timeout": timeout, "limit": 20, "allowed_updates": ["message"]}
+        if offset is not None:
+            payload["offset"] = offset
+        result = await self._call("getUpdates", payload)
+        return result if isinstance(result, list) else []
+
     async def get_updates(self) -> list[dict]:
         result = await self._call("getUpdates", {"timeout": 0, "limit": 100})
         return result if isinstance(result, list) else []
 
-    async def _call(self, method: str, payload: dict):
+    async def _call(self, method: str, payload: dict, file: tuple[str, str, bytes] | None = None):
         async with self._pace:  # one call at a time, about one per `min_interval`
             wait = self._min_interval - (time.monotonic() - self._last_sent)
             if wait > 0:
                 await self._sleep(wait)
             try:
-                return await self._attempt_loop(method, payload)
+                return await self._attempt_loop(method, payload, file)
             finally:
                 self._last_sent = time.monotonic()
 
-    async def _attempt_loop(self, method: str, payload: dict):
+    async def _attempt_loop(self, method: str, payload: dict, file: tuple[str, str, bytes] | None = None):
         last = "no attempt made"
         for attempt in range(1, self._attempts + 1):
             delay = self._backoff * 2 ** (attempt - 1)
             try:
-                status, body = await self._post(method, payload)
+                status, body = await self._post(method, payload, file)
             except (aiohttp.ClientError, TimeoutError) as exc:
                 # Only the class name: aiohttp error text can contain the request URL.
                 last = f"network error ({type(exc).__name__})"
@@ -161,11 +180,24 @@ class TelegramNotifier(Notifier):
                 await self._sleep(delay)
         raise NotifierError(f"Telegram {method} failed after {self._attempts} attempts: {last}")
 
-    async def _post(self, method: str, payload: dict) -> tuple[int, dict]:
+    async def _post(
+        self, method: str, payload: dict, file: tuple[str, str, bytes] | None = None
+    ) -> tuple[int, dict]:
         if self._http is None:
             self._http = aiohttp.ClientSession(timeout=self._timeout)
         url = f"{self._base}/bot{self._token}/{method}"
-        async with self._http.post(url, json=payload) as response:
+        if file is None:
+            request = self._http.post(url, json=payload)
+        else:
+            # A FormData can be sent only once, so each attempt builds its own.
+            form = aiohttp.FormData()
+            for key, value in payload.items():
+                form.add_field(key, str(value))
+            field, name, data = file
+            kind = "text/csv" if name.endswith(".csv") else "text/plain"
+            form.add_field(field, data, filename=name, content_type=kind)
+            request = self._http.post(url, data=form)
+        async with request as response:
             try:
                 body = await response.json(content_type=None)
             except (ValueError, aiohttp.ContentTypeError):

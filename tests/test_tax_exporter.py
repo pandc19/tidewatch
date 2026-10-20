@@ -3,6 +3,7 @@ import io
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -12,6 +13,7 @@ from bot.reports.tax_exporter import COLUMNS, default_path, export, main
 from tests.conftest import _skip_or_fail, _test_database_url
 
 D = Decimal
+GYE = ZoneInfo("America/Guayaquil")
 
 
 async def trade(session, sold: datetime, *, symbol="SOLUSDT", net="0.48392662", bought: datetime | None = None,
@@ -31,9 +33,9 @@ async def trade(session, sold: datetime, *, symbol="SOLUSDT", net="0.48392662", 
     return row
 
 
-async def run(session, year=None):
+async def run(session, year=None, tz=UTC):
     out = io.StringIO()
-    summary = await export(session, out, year)
+    summary = await export(session, out, year, tz)
     return summary, list(csv.reader(io.StringIO(out.getvalue())))
 
 
@@ -54,7 +56,7 @@ async def test_a_row_is_plain_readable_and_complete(session):
     assert summary.rows == 1 and summary.total_net_profit_usd == D("0.48392662")
 
 
-async def test_the_tax_year_is_the_utc_year_of_the_sale(session):
+async def test_with_a_utc_zone_the_year_is_the_utc_year_of_the_sale(session):
     await trade(session, datetime(2025, 12, 31, 23, 59, 59, tzinfo=UTC), net="1")
     await trade(session, datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC), net="2")
     await trade(session, datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC), net="3")
@@ -65,6 +67,33 @@ async def test_the_tax_year_is_the_utc_year_of_the_sale(session):
     assert [r[COLUMNS.index("net_profit_usd")] for r in rows[1:]] == ["2", "3"]
     assert summary.rows == 2 and summary.total_net_profit_usd == D("5")
     assert (await run(session))[0].rows == 4  # no year: everything
+
+
+async def test_the_year_follows_the_report_time_zone(session):
+    # Ecuador is UTC-5: 2027-01-01 04:59 UTC is still 31 December 2026 there.
+    await trade(session, datetime(2026, 1, 1, 4, 59, tzinfo=UTC), net="1")  # 31 Dec 2025 in Ecuador
+    await trade(session, datetime(2026, 1, 1, 5, 0, tzinfo=UTC), net="2")  # 1 Jan 2026 in Ecuador
+    await trade(session, datetime(2027, 1, 1, 4, 59, tzinfo=UTC), net="3")  # 31 Dec 2026 in Ecuador
+    await trade(session, datetime(2027, 1, 1, 5, 0, tzinfo=UTC), net="4")  # 1 Jan 2027 in Ecuador
+
+    summary, rows = await run(session, year=2026, tz=GYE)
+
+    assert [r[COLUMNS.index("net_profit_usd")] for r in rows[1:]] == ["2", "3"]
+    assert summary.rows == 2
+    # Cut in UTC instead, sale 1 (still 2025 in Ecuador) would be in and sale 3 (2026 in Ecuador) out:
+    # the mismatch the time zone fixes.
+    assert [r[COLUMNS.index("net_profit_usd")] for r in (await run(session, year=2026))[1][1:]] == ["1", "2"]
+
+
+async def test_the_local_date_column_shows_the_ecuador_day_next_to_the_utc_day(session):
+    await trade(session, datetime(2026, 10, 5, 3, 30, tzinfo=UTC))
+
+    _, rows = await run(session, tz=GYE)
+    got = dict(zip(rows[0], rows[1], strict=True))
+
+    assert (got["sell_date_utc"], got["sell_date_local"]) == ("2026-10-05", "2026-10-04")
+    assert got["sell_timestamp_utc"] == "2026-10-05T03:30:00Z"  # timestamps stay UTC
+    assert rows[0][:2] == ["sell_date_utc", "sell_date_local"]
 
 
 async def test_rows_come_out_oldest_sale_first(session):

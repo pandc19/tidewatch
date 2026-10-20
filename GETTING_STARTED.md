@@ -96,6 +96,8 @@ Without this the bot works and alerts are log lines only. To get them on your ph
 
 Every alert starts with `[LIVE]`, `[TESTNET]` or `[DRY RUN]` so a practice alert cannot be mistaken for real money. If Telegram is down the bot keeps trading; failed alerts are logged.
 
+**Commands (optional).** Set `TELEGRAM_COMMANDS=true` and restart; then `/status` in the bot's chat replies with the mode, engine health, the open position and results, and `/help` lists the commands. They are read-only and only the chat in `TELEGRAM_CHAT_ID` is answered. Only one running bot may have this on per token (a laptop and a server sharing one token would fight; Telegram answers 409), and `--find-chat-id` cannot run while a bot is polling. See ADR-008.
+
 ## 8. Run the whole bot on your machine, every feature on
 
 Everything runs locally: the scanner, the trading engine, Telegram alerts, the kill-switch, the exports. You need sections 1 to 5 done (and section 7 for Telegram alerts). One script manages it:
@@ -181,7 +183,16 @@ The container applies migrations, then starts the bot. Compose never starts a da
 .venv/bin/python -m bot.reports.tax_exporter                 # every trade
 ```
 
-One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and how it ended. The tax year is the UTC year of the *sale*; USDT is treated as USD. This is a record of trades, not tax advice. Ask an accountant how your country wants it reported.
+One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and how it ended. `--year` and `/csv` cut the year by Ecuador days (`REPORT_TIMEZONE`), so a sale on the evening of 31 December stays in that year; `sell_date_local` is that day and `sell_date_utc` the UTC one.
+
+**The sales sheet.** The same trades in your spreadsheet's layout, `Venta` rows only, ready to paste:
+
+```bash
+.venv/bin/python -m bot.reports.sales_sheet --year 2026 --month 10        # prints the rows
+.venv/bin/python -m bot.reports.sales_sheet --year 2026 --out ventas.txt  # or a file; add --header for the title row
+```
+
+Tab-separated, Spanish format (`0,128`, `$118,2000`, `$15,55`), the date is the day in Ecuador (`REPORT_TIMEZONE`), and there are no fees: `Monto Directo` is quantity x sell price and `Monto` is the gross profit, quantity x (sell price - buy price). The CSV above keeps the fees and the net profit, so the two differ by the fees. From Telegram (with `TELEGRAM_COMMANDS=true`): `/csv [year|all]` and `/report [year|yyyy-mm]` send these as files. To try them before there are real trades, `scripts/seed_demo_sales.sql` adds two fake sales (your SOL and GTC rows) to a local database; remove them with `scripts/reset_db.py local`. The tax year is the UTC year of the *sale*; USDT is treated as USD. This is a record of trades, not tax advice. Ask an accountant how your country wants it reported.
 
 ## Common problems
 
