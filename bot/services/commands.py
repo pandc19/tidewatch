@@ -1,4 +1,4 @@
-"""Read-only Telegram commands (ADR-008): `/status` and `/help`.
+"""Read-only Telegram commands (ADR-008): `/status`, `/csv`, `/report` and `/help`.
 
 A long-polling task, separate from the engine: it never takes the engine's lock and never
 changes anything. Rules that matter:
@@ -6,7 +6,8 @@ changes anything. Rules that matter:
 * Only messages from the configured chat are answered. Anything else is ignored, and logged by
   chat id only (never the text).
 * The backlog is skipped at start, so a command sent before a restart never runs afterwards.
-* Replies go through the alert queue, so they obey its pacing and size rules (ADR-007).
+* Text replies go through the alert queue, so they obey its pacing and size rules (ADR-007).
+  A file (a report) is sent by the listener's own sender, straight to the owner's chat.
 * Only one process can poll a token. The caller starts this after the instance lock is held.
 """
 
@@ -16,6 +17,7 @@ import asyncio
 import html
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Protocol
 
 from bot.config.settings import APP_NAME, Settings
@@ -26,11 +28,28 @@ log = logging.getLogger(__name__)
 LONG_POLL_SECONDS = 25
 MAX_BACKOFF_SECONDS = 60.0
 
-Handler = Callable[[], Awaitable[str]]
+
+
+@dataclass(frozen=True)
+class Document:
+    """A file to send to the owner's chat. `caption` is plain text (it is escaped on the way out)."""
+
+    filename: str
+    content: bytes
+    caption: str = ""
+
+
+Reply = str | Document
+Handler = Callable[[list[str]], Awaitable[Reply]]  # gets the words after the command
 
 
 class Poller(Protocol):
     async def poll_updates(self, offset: int | None, timeout: int) -> list[dict]: ...
+    async def close(self) -> None: ...
+
+
+class Sender(Protocol):
+    async def send_document(self, filename: str, content: bytes, caption: str | None = None) -> None: ...
     async def close(self) -> None: ...
 
 
@@ -43,6 +62,7 @@ class CommandListener:
         reply: Callable[[str], None],
         handlers: dict[str, Handler],
         mode: str,
+        sender: Sender | None = None,
         long_poll_seconds: int = LONG_POLL_SECONDS,
         backoff_step: float = 5.0,
     ):
@@ -51,6 +71,7 @@ class CommandListener:
         self._reply = reply
         self._handlers = dict(handlers)
         self._mode = mode
+        self._sender = sender
         self._long_poll = long_poll_seconds
         self._backoff_step = backoff_step
         self._warned: set[str] = set()
@@ -78,6 +99,8 @@ class CommandListener:
                     await self._handle(update)
         finally:
             await self._poller.close()
+            if self._sender is not None:
+                await self._sender.close()
 
     async def _poll(self, offset: int | None, stop: asyncio.Event) -> list[dict]:
         """One long poll, abandoned at once if the bot is stopping."""
@@ -136,7 +159,9 @@ class CommandListener:
                 self._warned.add(chat_id)
                 log.warning("telegram commands: ignored a command from chat %s (not the owner's)", chat_id)
             return
-        name = text.split()[0][1:].split("@")[0].lower()
+        words = text.split()
+        name = words[0][1:].split("@")[0].lower()
+        args = words[1:]
         if name == "start":
             name = "help"
         if name == "help":
@@ -147,27 +172,47 @@ class CommandListener:
             self._reply(self._plain("Unknown command. Try /help."))
             return
         try:
-            self._reply(await handler())
+            result = await handler(args)
+            if isinstance(result, Document):
+                await self._deliver(name, result)
+            else:
+                self._reply(result)
         except Exception as exc:  # noqa: BLE001  a failing report must not stop the listener
             log.warning("telegram commands: /%s failed (%s)", name, type(exc).__name__)
             self._reply(self._plain(f"/{name} could not be built; the details are in the log."))
+
+    async def _deliver(self, name: str, document: Document) -> None:
+        if self._sender is None:
+            self._reply(self._plain(f"/{name} produced a file but no file sender is set up."))
+            return
+        try:
+            await self._sender.send_document(document.filename, document.content, html.escape(document.caption) or None)
+        except NotifierError as exc:  # the text is already token-free
+            log.warning("telegram commands: /%s file not delivered: %s", name, exc)
+            self._reply(self._plain(f"/{name}: the file could not be sent ({exc})."))
 
     def _plain(self, text: str) -> str:
         return f"<b>[{html.escape(self._mode)}]</b> {html.escape(APP_NAME)}\n{html.escape(text)}"
 
     def help_text(self) -> str:
-        lines = [f"/{name}: {doc}" for name, doc in COMMAND_HELP.items() if name in self._handlers or name == "help"]
+        lines = [
+            f"/{name}{' ' + usage if usage else ''}: {doc}"
+            for name, (usage, doc) in COMMAND_HELP.items()
+            if name in self._handlers or name == "help"
+        ]
         return self._plain("Commands (read-only):\n" + "\n".join(lines))
 
 
 COMMAND_HELP = {
-    "status": "what the bot is doing: mode, engine health, open position, results",
-    "help": "this list",
+    "status": ("", "what the bot is doing: mode, engine health, open position, results"),
+    "csv": ("[year|all]", "the ledger as a CSV file: UTC dates, fees and net profit (default: this year)"),
+    "report": ("[year|yyyy-mm]", "the sales rows in the sheet format: Ecuador dates, no fees (default: this year)"),
+    "help": ("", "this list"),
 }
 
 
 def build_command_listener(
-    settings: Settings, *, reply: Callable[[str], None], status: Handler
+    settings: Settings, *, reply: Callable[[str], None], handlers: dict[str, Handler]
 ) -> CommandListener:
     """The listener for the configured bot and chat. Its own HTTP session: a long poll must not
     hold up the alert sender (each TelegramNotifier serialises its calls)."""
@@ -178,12 +223,18 @@ def build_command_listener(
         attempts=1,  # the listener backs off itself
         min_interval=0.0,
     )
+    sender = TelegramNotifier(
+        settings.telegram_bot_token.get_secret_value(),
+        settings.telegram_chat_id,
+        timeout=60.0,  # an upload, not a message
+    )
     return CommandListener(
         poller=poller,
         chat_id=settings.telegram_chat_id,
         reply=reply,
-        handlers={"status": status},
+        handlers=handlers,
         mode=mode_label(settings),
+        sender=sender,
     )
 
 

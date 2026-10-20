@@ -56,12 +56,15 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 - **Widen or tune the 2% stop** once there is real trade history.
 - **Shorter buy timeout.** With one position, an unfilled buy locks the whole wallet for up to 3 days.
 - **WhatsApp or another alert channel.**
-- **More Telegram commands.** `/status` and `/help` exist (read-only, ADR-008; set `TELEGRAM_COMMANDS=true`, not yet seen against real Telegram). Still to decide: state-changing commands such as `/pause`, `/resume`, cancel the open buy, sell the open position now. Each needs its own ADR and a safe path into the engine. `/status` could also show the last scan and why no entry has fired.
+- **More Telegram commands.** `/status`, `/csv`, `/report` and `/help` exist (read-only, ADR-008; set `TELEGRAM_COMMANDS=true`; none seen against real Telegram yet, and the file upload not at all). Still to decide: state-changing commands such as `/pause`, `/resume`, cancel the open buy, sell the open position now. Each needs its own ADR and a safe path into the engine. `/status` could also show the last scan and why no entry has fired.
 - **Partial manual sales and partial fills of an exit leg** are flagged or waited out; no special handling.
 
 ---
 
 ## To check
+
+- **Email delivery of the reports** (Mailgun, three variables `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_FROM_EMAIL`, as in the owner's insight-engine). Not built: today `/csv` and `/report` arrive as Telegram files. Decide whether email should replace or add to that, and whether it should also send a monthly report on a schedule.
+- **Which year the CSV means.** `/csv 2026` and `tax_exporter --year` cut the year at UTC midnight, while the sales sheet uses Ecuador days. A sale between 19:00 and midnight in Ecuador on 31 December falls in the next UTC year in the CSV and in the old year in the sheet. If taxes follow the Ecuador date, the CSV should too.
 
 - Whether Binance's "convert small balances to BNB" can be triggered through the API.
 - Ask an accountant whether treating USDT as USD is acceptable for tax reporting, and how the swept leftover coin (under one quantity step, from an earlier trade) should be costed in `tax_ledger`.

@@ -52,6 +52,8 @@ The trading and operations words used in this project, with the meaning they hav
 | **Net profit / return %** | Realised PnL after fees; the same as a share of the cost. |
 | **Break-even win rate** | The share of trades that must hit the take-profit to cover the stops and the fees. With a 4% target, a 2% stop and 0.2% fees it is **36.7%**. The replay won 33%. |
 | **Edge** | A real, repeatable advantage. The entry signal has **no demonstrated edge** (ADR-006): do not call it profitable. |
+| **Reporte de ventas (sales sheet)** | The ledger as `Venta` rows in the owner's spreadsheet columns: Fecha, Plataforma, Tipo, Motivo, Observaciones, Cantidad Operada, Precio Unitario de Compra / de Venta, Monto Directo, Monto. Tab-separated Spanish format, Ecuador dates, no fees. `Monto Directo` = quantity x sell price; `Monto` = gross profit. |
+| **Gross vs net profit** | Gross is quantity x (sell price - buy price), what the sheet records. Net is what the bot books after fees are subtracted (never added), so it is a little lower. The CSV has both the fees and the net. |
 | **Tax ledger** | One row per closed trade: prices, totals, fees, net profit, UTC timestamps. The record for capital-gains reporting (`tax_exporter`). |
 
 ## Fees and exchange limits

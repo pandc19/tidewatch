@@ -183,7 +183,16 @@ The container applies migrations, then starts the bot. Compose never starts a da
 .venv/bin/python -m bot.reports.tax_exporter                 # every trade
 ```
 
-One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and how it ended. The tax year is the UTC year of the *sale*; USDT is treated as USD. This is a record of trades, not tax advice. Ask an accountant how your country wants it reported.
+One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and how it ended.
+
+**The sales sheet.** The same trades in your spreadsheet's layout, `Venta` rows only, ready to paste:
+
+```bash
+.venv/bin/python -m bot.reports.sales_sheet --year 2026 --month 10        # prints the rows
+.venv/bin/python -m bot.reports.sales_sheet --year 2026 --out ventas.txt  # or a file; add --header for the title row
+```
+
+Tab-separated, Spanish format (`0,128`, `$118,2000`, `$15,55`), the date is the day in Ecuador (`REPORT_TIMEZONE`), and there are no fees: `Monto Directo` is quantity x sell price and `Monto` is the gross profit, quantity x (sell price - buy price). The CSV above keeps the fees and the net profit, so the two differ by the fees. From Telegram (with `TELEGRAM_COMMANDS=true`): `/csv [year|all]` and `/report [year|yyyy-mm]` send these as files. The tax year is the UTC year of the *sale*; USDT is treated as USD. This is a record of trades, not tax advice. Ask an accountant how your country wants it reported.
 
 ## Common problems
 

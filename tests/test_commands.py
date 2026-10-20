@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from bot.services.commands import CommandListener
+from bot.services.commands import CommandListener, Document
 from bot.services.notifications import NotifierError
 
 OWNER = "42"
@@ -34,11 +34,27 @@ class FakePoller:
         self.closed = True
 
 
-async def drive(poller, *, handlers=None, until=None, mode="TESTNET", chat=OWNER):
+class FakeSender:
+    def __init__(self, fail=None):
+        self.sent: list[tuple[str, bytes, str | None]] = []
+        self.fail = fail
+        self.closed = False
+
+    async def send_document(self, filename, content, caption=None):
+        if self.fail:
+            raise self.fail
+        self.sent.append((filename, content, caption))
+
+    async def close(self):
+        self.closed = True
+
+
+async def drive(poller, *, handlers=None, until=None, mode="TESTNET", chat=OWNER, sender=None):
     """Run the listener until `until(replies)` is true (or 2 s), then stop it."""
     replies: list[str] = []
     listener = CommandListener(
-        poller=poller, chat_id=chat, reply=replies.append, handlers=handlers or {}, mode=mode, backoff_step=0.01
+        poller=poller, chat_id=chat, reply=replies.append, handlers=handlers or {}, mode=mode,
+        backoff_step=0.01, sender=sender,
     )
     stop = asyncio.Event()
     task = asyncio.ensure_future(listener.run(stop))
@@ -51,7 +67,7 @@ async def drive(poller, *, handlers=None, until=None, mode="TESTNET", chat=OWNER
     return replies
 
 
-async def status_ok():
+async def status_ok(args):
     return "STATUS TEXT"
 
 
@@ -89,13 +105,14 @@ async def test_help_start_and_unknown_commands():
     poller = FakePoller([], [msg(1, "/help"), msg(2, "/start"), msg(3, "/pause"), msg(4, "/status@tidewatch_japc_bot")])
     replies = await drive(poller, handlers={"status": status_ok}, until=lambda r: len(r) == 4)
     assert "/status" in replies[0] and "read-only" in replies[0] and "[TESTNET]" in replies[0]
+    assert "/csv" not in replies[0] and "/report" not in replies[0]  # only commands that are set up
     assert replies[1] == replies[0]  # /start is /help
     assert "Unknown command" in replies[2]  # nothing that changes state exists
     assert replies[3] == "STATUS TEXT"  # "@botname" is accepted
 
 
 async def test_a_failing_report_is_answered_and_the_loop_survives(caplog):
-    async def boom():
+    async def boom(args):
         raise RuntimeError("secret internals")
 
     caplog.set_level(logging.WARNING)
@@ -136,3 +153,43 @@ async def test_stopping_ends_a_long_poll_at_once_and_closes_the_poller():
     poller = FakePoller([])  # then blocks for an hour
     await drive(poller)
     assert poller.closed
+
+
+async def test_the_words_after_the_command_reach_the_handler():
+    seen = []
+
+    async def echo(args):
+        seen.append(args)
+        return "ok"
+
+    poller = FakePoller([], [msg(1, "/report 2026-10"), msg(2, "/report"), msg(3, "/report@bot  2026   x")])
+    await drive(poller, handlers={"report": echo}, until=lambda r: len(r) == 3)
+    assert seen == [["2026-10"], [], ["2026", "x"]]
+
+
+async def test_a_document_reply_is_sent_as_a_file_with_an_escaped_caption():
+    async def report(args):
+        return Document("ventas_2026-10.txt", b"a\tb\n", "2 <filas> & mas")
+
+    sender = FakeSender()
+    poller = FakePoller([], [msg(1, "/report")])
+    replies = await drive(poller, handlers={"report": report}, sender=sender, until=lambda r: False)
+    assert sender.sent == [("ventas_2026-10.txt", b"a\tb\n", "2 &lt;filas&gt; &amp; mas")]
+    assert replies == [] and sender.closed  # no text reply, and the sender is closed on stop
+
+
+async def test_a_file_that_cannot_be_sent_is_explained_without_the_token():
+    async def report(args):
+        return Document("x.txt", b"x")
+
+    sender = FakeSender(fail=NotifierError("Telegram refused sendDocument: 400 Bad Request: chat not found"))
+    poller = FakePoller([], [msg(1, "/report"), msg(2, "/report")])
+    replies = await drive(poller, handlers={"report": report}, sender=sender, until=lambda r: len(r) == 2)
+    assert all("could not be sent" in r and "chat not found" in r for r in replies)  # and the loop went on
+
+
+async def test_help_lists_the_report_commands_when_they_exist():
+    poller = FakePoller([], [msg(1, "/help")])
+    handlers = {"status": status_ok, "csv": status_ok, "report": status_ok}
+    (reply,) = await drive(poller, handlers=handlers, until=lambda r: r)
+    assert "/csv [year|all]" in reply and "/report [year|yyyy-mm]" in reply and "Ecuador" in reply

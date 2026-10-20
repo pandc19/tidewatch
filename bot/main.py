@@ -27,6 +27,7 @@ from bot.services.binance_client import ExchangeClient, ExchangeError
 from bot.services.commands import build_command_listener
 from bot.services.notifications import NotificationService, build_notifier, send_test_message
 from bot.services.reconciliation import reconcile
+from bot.services.report_commands import csv_handler, report_handler
 from bot.services.risk_manager import config_problems
 from bot.services.scanner import Scanner
 from bot.services.status import format_status, gather_status
@@ -181,7 +182,7 @@ async def _engine_with_lock(
         started = time.monotonic()
         stream_on = not settings.dry_run and settings.has_binance_credentials
 
-        async def status() -> str:
+        async def status(_args: list[str]) -> str:
             return format_status(
                 await gather_status(
                     settings=settings, sessions=db.session, exchange=exchange,
@@ -192,9 +193,17 @@ async def _engine_with_lock(
                 )
             )
 
-        listener = build_command_listener(settings, reply=alerts.notify, status=status)
+        listener = build_command_listener(
+            settings,
+            reply=alerts.notify,
+            handlers={
+                "status": status,
+                "csv": csv_handler(settings, db.session),
+                "report": report_handler(settings, db.session),
+            },
+        )
         commands = asyncio.ensure_future(listener.run(stop))
-        log.info("telegram commands: listening for /status and /help from the configured chat")
+        log.info("telegram commands: listening for /status, /csv, /report and /help from the configured chat")
     elif settings.telegram_commands:
         log.warning("TELEGRAM_COMMANDS is on but Telegram is not configured: no commands")
     try:
