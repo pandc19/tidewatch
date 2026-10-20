@@ -65,9 +65,10 @@ async def test_csv_sends_the_full_ledger_with_fees_and_net_profit(session):
     result = await csv_handler(cfg(), factory(session))(["2026"])
     assert isinstance(result, Document) and result.filename == "tidewatch_ledger_2026.csv"
     lines = result.content.decode().splitlines()
-    assert lines[0].startswith("sell_date_utc,symbol") and "fees_usd" in lines[0] and "net_profit_usd" in lines[0]
-    assert len(lines) == 2 and lines[1].startswith("2026-10-05,SOLUSDT")  # UTC date, unlike the report
-    assert "1 trade(s)" in result.caption and "UTC" in result.caption
+    assert lines[0].startswith("sell_date_utc,sell_date_local,symbol")
+    assert "fees_usd" in lines[0] and "net_profit_usd" in lines[0]
+    assert len(lines) == 2 and lines[1].startswith("2026-10-05,2026-10-04,SOLUSDT")  # UTC day, then Ecuador day
+    assert "1 trade(s)" in result.caption and "America/Guayaquil" in result.caption
 
 
 async def test_csv_all_defaults_and_errors(session):
@@ -78,3 +79,12 @@ async def test_csv_all_defaults_and_errors(session):
     assert (await handle(["soon"])).startswith("Usage: /csv")
     assert (await handle(["1999"])).startswith("Usage: /csv")
     assert await handle([]) == f"No closed trades for {datetime.now(UTC).year}."  # this year, none yet
+
+
+async def test_csv_year_is_cut_by_ecuador_days(session):
+    await sale(session, datetime(2027, 1, 1, 4, 59, tzinfo=UTC))  # 31 Dec 2026 in Ecuador
+    await sale(session, datetime(2027, 1, 1, 5, 0, tzinfo=UTC), symbol="ETHUSDT")  # 1 Jan 2027 in Ecuador
+    handle = csv_handler(cfg(), factory(session))
+    result = await handle(["2026"])
+    assert isinstance(result, Document) and len(result.content.decode().splitlines()) == 2
+    assert "SOLUSDT" in result.content.decode() and "ETHUSDT" not in result.content.decode()

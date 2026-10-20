@@ -205,7 +205,7 @@ class CommandListener:
 
 COMMAND_HELP = {
     "status": ("", "what the bot is doing: mode, engine health, open position, results"),
-    "csv": ("[year|all]", "the ledger as a CSV file: UTC dates, fees and net profit (default: this year)"),
+    "csv": ("[year|all]", "the ledger as a CSV file: fees and net profit, year by Ecuador days (default: this year)"),
     "report": ("[year|yyyy-mm]", "the sales rows in the sheet format: Ecuador dates, no fees (default: this year)"),
     "help": ("", "this list"),
 }

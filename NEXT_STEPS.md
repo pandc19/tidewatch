@@ -64,7 +64,6 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 ## To check
 
 - **Email delivery of the reports** (Mailgun, three variables `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_FROM_EMAIL`, as in the owner's insight-engine). Not built: today `/csv` and `/report` arrive as Telegram files. Decide whether email should replace or add to that, and whether it should also send a monthly report on a schedule.
-- **Which year the CSV means.** `/csv 2026` and `tax_exporter --year` cut the year at UTC midnight, while the sales sheet uses Ecuador days. A sale between 19:00 and midnight in Ecuador on 31 December falls in the next UTC year in the CSV and in the old year in the sheet. If taxes follow the Ecuador date, the CSV should too.
 
 - Whether Binance's "convert small balances to BNB" can be triggered through the API.
 - Ask an accountant whether treating USDT as USD is acceptable for tax reporting, and how the swept leftover coin (under one quantity step, from an earlier trade) should be costed in `tax_ledger`.

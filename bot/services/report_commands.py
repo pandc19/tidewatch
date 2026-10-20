@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from datetime import UTC, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from bot.config.settings import Settings
@@ -13,24 +13,26 @@ from bot.services.commands import Document, Handler, Reply
 
 
 def csv_handler(settings: Settings, sessions) -> Handler:
-    """`/csv [year|all]`: the full ledger (UTC dates, fees, net profit) as a CSV file."""
+    """`/csv [year|all]`: the full ledger (fees, net profit) as a CSV file; the year is by Ecuador days."""
+
+    tz = ZoneInfo(settings.report_timezone)
 
     async def handle(args: list[str]) -> Reply:
-        word = (args[0] if args else str(datetime.now(UTC).year)).lower()
+        word = (args[0] if args else str(datetime.now(tz).year)).lower()
         if word == "all":
             year, label = None, "all"
-        elif word.isdigit() and 2000 <= int(word) <= datetime.now(UTC).year + 1:
+        elif word.isdigit() and 2000 <= int(word) <= datetime.now(tz).year + 1:
             year, label = int(word), word
         else:
             return "Usage: /csv [year|all], for example /csv 2026"
         out = io.StringIO()
         async with sessions() as session:
-            summary = await export(session, out, year)
+            summary = await export(session, out, year, tz)
         if summary.rows == 0:
             return f"No closed trades for {label}."
         caption = (
             f"Ledger {label}: {summary.rows} trade(s), net {summary.total_net_profit_usd:+.4f} USD, "
-            f"fees {summary.total_fees_usd:.4f} USD. UTC dates."
+            f"fees {summary.total_fees_usd:.4f} USD. Year by {settings.report_timezone} days, timestamps in UTC."
         )
         return Document(f"tidewatch_ledger_{label}.csv", out.getvalue().encode("utf-8"), caption)
 

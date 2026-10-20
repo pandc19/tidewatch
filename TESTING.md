@@ -103,7 +103,7 @@ How to cancel or sell by hand is not scripted. NEXT_STEPS says these were tested
 
 - [ ] `exports/tax_ledger_2026.csv` exists with one row per closed trade.
 - [ ] Prices, quantities, fees and net profit match the trades you saw, to the cent.
-- [ ] The year is the UTC year of the sale. A `MANUAL` close is included.
+- [ ] The year is the calendar year of the sale by Ecuador days (`REPORT_TIMEZONE`); `sell_date_local` and `sell_date_utc` can differ in the evening. A `MANUAL` close is included.
 - [ ] Rows come from the testing database only (no real trades mixed in).
 
 ## 6. Production rehearsal on the testnet (weeks)
