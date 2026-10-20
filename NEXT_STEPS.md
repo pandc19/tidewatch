@@ -2,13 +2,25 @@
 
 Pending items only. When something is built or resolved, delete it from this file. What *you* must set up (keys, Telegram, database, server) is in [SETUP_CHECKLIST.md](SETUP_CHECKLIST.md).
 
-Last updated 2026-10-19, during phase 5 (CSV export and Telegram alerts built; Telegram delivery verified, trade-alert layout not yet seen).
+Last updated 2026-10-20, during phase 6: the bot runs on the Binance testnet on Coolify (since 2026-10-19) and is being monitored for a few days. Telegram delivery is verified; trade-alert layout is not yet seen.
 
 ---
 
 ## Telegram: trade alerts on a real run
 
 The bot, token and chat ID work against real Telegram (`--test` arrived on the phone, 2026-10-19; wrong token and wrong chat ID fail cleanly without leaking the token). Still to check: `python -m bot.main --check-only` sending its message, and on a testnet run that the HTML renders as intended (tables aligned in the `<pre>` blocks).
+
+---
+
+## Monitoring the testnet rehearsal (running since 2026-10-19, a few days)
+
+The bot runs on Coolify against the testnet with `DRY_RUN=false`, `ALLOCATION_PCT=0.0016` and `DAILY_LOSS_LIMIT_PCT=0.00005`. Nothing is wrong if it stays quiet: the signal fired about once every one to three days in the replay. While it runs, look for:
+
+- **The first trade:** the alerts and how the `<pre>` tables look on the phone; the filled buy's `commission` and `commission_asset` in `orders`.
+- **Both ways out:** at least one close by take-profit and one by stop-loss, and each OCO's other leg ending `CANCELED` or `EXPIRED`.
+- **A deploy with a position open:** the exit orders stay on the exchange and the new instance reconciles (not yet seen).
+- **The account stream:** how often it fails to subscribe, and any "unprotected" or "needs your attention" alert.
+- **Coolify:** the application stays healthy; the stop timeout is 40 s or more.
 
 ---
 
@@ -80,4 +92,4 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 ## Build order
 
 5. Notifications: done; delivery verified, trade-alert layout to be seen on a testnet run.
-6. Deployment: Dockerfile, CI and git flow built; the Coolify application, its database and the first deploy (checklist at the bottom of docs/coolify.md) are still to do.
+6. Deployment: built and running on the testnet via Coolify since 2026-10-19; now monitoring for a few days (see the section above). Left: the rest of the Coolify checklist (stop timeout, a hand-over with an open position, backups) and the gate to real money.

@@ -1,6 +1,6 @@
 # Setup checklist: what only you can set up
 
-The code is built up to phase 5. What is left is mostly **accounts, keys and servers that only you can create**. This file lists each piece, in order: why it is needed, how to do it, how to check it worked, and what has **not** been verified yet.
+The code is built (phase 6 of 6), and the bot is deployed on the testnet through Coolify and being monitored for a few days. What is left is mostly **accounts, keys and servers that only you can create**. This file lists each piece, in order: why it is needed, how to do it, how to check it worked, and what has **not** been verified yet.
 
 Tick the boxes as you go. Work through the stages in order; do not skip ahead to real money.
 
@@ -13,7 +13,7 @@ Tick the boxes as you go. Work through the stages in order; do not skip ahead to
 | **A** Local + Binance testnet | Develop and test with fake money | None | Done on your machine |
 | **B** Telegram alerts | Alerts on your phone | None | Done; test message verified 2026-10-19 |
 | **C** Dry-run on real market data | Real prices and balance, never sends an order | None | Ready to try |
-| **D** Server + managed database | Run unattended on a DigitalOcean droplet | None (still dry-run) | **Not yet run anywhere** |
+| **D** Server + database | Run unattended on a DigitalOcean droplet through Coolify | None (testnet, fake money) | **Deployed 2026-10-19 on the testnet, monitoring for a few days.** Real-data dry run and real money still ahead |
 | **E** Small live trades | Real orders with a small wallet | **Yes** | Blocked until the gate below passes |
 
 ---
