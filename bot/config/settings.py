@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     # Strategy
     symbols: Annotated[list[str], NoDecode] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
     quote_asset: str = "USDT"
+    # Dynamic list (ADR-009): off by default. When on, the scanner trades the most liquid
+    # pairs of the quote asset instead of SYMBOLS (which stays the startup check and the fallback).
+    symbols_auto: bool = False
+    symbols_auto_count: int = Field(default=12, ge=1, le=50)
+    # Minimum 24h traded value, in the quote asset.
+    symbols_auto_min_volume: Decimal = Field(default=Decimal(5_000_000), ge=0)
+    # Highest risk tier allowed: "low" (calm), "medium" or "high" (everything that passes the filters).
+    symbols_auto_max_risk: Literal["low", "medium", "high"] = "medium"
+    symbols_auto_refresh_minutes: int = Field(default=60, ge=5)
     entry_timeout_days: int = Field(default=3, ge=1)
     take_profit_pct: Decimal = Field(default=Decimal("0.04"), gt=0)
     stop_loss_pct: Decimal = Field(default=Decimal("0.02"), gt=0, lt=1)

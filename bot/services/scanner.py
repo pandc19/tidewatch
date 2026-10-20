@@ -26,6 +26,7 @@ from bot.engine.state_machine import EntrySignal
 from bot.services.binance_client import ExchangeClient
 from bot.services.indicators import ema_series, rsi_series
 from bot.services.risk_manager import spread_ok
+from bot.services.universe import Universe
 
 log = logging.getLogger(__name__)
 
@@ -63,9 +64,11 @@ class Scanner:
         exchange: ExchangeClient,
         *,
         clock: Callable[[], float] = time.monotonic,
+        universe: Universe | None = None,
     ):
         self._s = settings
         self._exchange = exchange
+        self._universe = universe or Universe(settings, exchange, clock=clock)
         self._clock = clock
         self._last_scan: float | None = None
 
@@ -88,7 +91,8 @@ class Scanner:
     async def scan(self) -> list[Candidate]:
         """Every symbol that signals and passes the spread filter, lowest RSI first."""
         found: list[Candidate] = []
-        for symbol in self._s.symbols:
+        await self._universe.refresh()
+        for symbol in self._universe.symbols:
             try:
                 candidate = await self._check(symbol)
             except Exception:
