@@ -32,6 +32,8 @@ log = logging.getLogger(__name__)
 
 # More history than the indicators strictly need: Wilder's RSI converges as it smooths.
 CANDLES = 200
+# How often the scanner says what it saw even when nothing signalled.
+HEARTBEAT_SECONDS = 3600
 
 
 def evaluate_signal(
@@ -45,6 +47,12 @@ def evaluate_signal(
     was_oversold = min(rsis[-rsi_lookback:]) <= rsi_oversold
     crossed_up = closes[-1] > emas[-1] and closes[-2] <= emas[-2]
     return rsis[-1] if was_oversold and crossed_up else None
+
+
+def lowest_recent_rsi(closes: list[Decimal], *, rsi_period: int, rsi_lookback: int) -> Decimal | None:
+    """The lowest RSI over the last `rsi_lookback` candles: how close the pair came to oversold."""
+    rsis = rsi_series(closes, rsi_period)
+    return min(rsis[-rsi_lookback:]) if rsis else None
 
 
 @dataclass(frozen=True)
@@ -71,6 +79,9 @@ class Scanner:
         self._universe = universe or Universe(settings, exchange, clock=clock)
         self._clock = clock
         self._last_scan: float | None = None
+        self._last_heartbeat: float | None = None
+        self._lows: dict[str, Decimal] = {}
+        self._failed = 0
 
     async def next_entry(self) -> EntrySignal | None:
         now = self._clock()
@@ -92,19 +103,38 @@ class Scanner:
         """Every symbol that signals and passes the spread filter, lowest RSI first."""
         found: list[Candidate] = []
         await self._universe.refresh()
+        self._lows, self._failed = {}, 0
         for symbol in self._universe.symbols:
             try:
                 candidate = await self._check(symbol)
             except Exception:
+                self._failed += 1
                 log.exception("scan of %s failed", symbol)
                 continue
             if candidate is not None:
                 found.append(candidate)
+        self._heartbeat(len(self._universe.symbols), len(found))
         return sorted(found, key=lambda c: c.rsi)
+
+    def _heartbeat(self, pairs: int, signals: int) -> None:
+        """One line per `HEARTBEAT_SECONDS`, so a quiet log can be told from a stuck scanner."""
+        now = self._clock()
+        if self._last_heartbeat is not None and now - self._last_heartbeat < HEARTBEAT_SECONDS:
+            return
+        self._last_heartbeat = now
+        closest = "no RSI readings"
+        if self._lows:
+            symbol, low = min(self._lows.items(), key=lambda kv: kv[1])
+            closest = f"closest to oversold: {symbol} lowest RSI {low:.1f} of the last {self._s.rsi_lookback} candles"
+        log.info("scan: %d pair(s) checked, %d failed, %d signal(s); %s (signal needs <= %s, then a cross up through the EMA)",
+                 pairs, self._failed, signals, closest, self._s.rsi_oversold)
 
     async def _check(self, symbol: str) -> Candidate | None:
         s = self._s
         closes = await self._exchange.closed_candle_closes(symbol, s.scan_interval, CANDLES)
+        low = lowest_recent_rsi(closes, rsi_period=s.rsi_period, rsi_lookback=s.rsi_lookback)
+        if low is not None:
+            self._lows[symbol] = low
         rsi = evaluate_signal(
             closes, rsi_period=s.rsi_period, rsi_oversold=s.rsi_oversold,
             rsi_lookback=s.rsi_lookback, ema_period=s.ema_period,
