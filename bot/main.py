@@ -39,6 +39,7 @@ async def run(check_only: bool) -> int:
     settings = get_settings()
     logging.basicConfig(
         level=settings.log_level.upper(),
+        stream=sys.stdout,  # the default is stderr, which Coolify shows as ERROR
         format=f"%(asctime)s %(levelname)s [{APP_NAME}] %(name)s: %(message)s",
     )
     log.info(
