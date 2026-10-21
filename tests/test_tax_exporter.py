@@ -25,7 +25,7 @@ async def trade(session, sold: datetime, *, symbol="SOLUSDT", net="0.48392662", 
     row = TaxLedger(
         position_id=pos.id, symbol=symbol, amount_operated=D("0.129"), buy_price_usd=D("120.41000000"),
         sell_price_usd=D("125.22"), total_buy_usd=D("15.6533"), total_sell_usd=D("16.15338"),
-        fees_usd=D(fees), net_profit_usd=D(net), buy_timestamp=bought or datetime(2026, 3, 1, 12, tzinfo=UTC),
+        buy_fee_usd=D("0.0156533"), sell_fee_usd=D("0.01615338"), fees_usd=D(fees), net_profit_usd=D(net), buy_timestamp=bought or datetime(2026, 3, 1, 12, tzinfo=UTC),
         sell_timestamp=sold,
     )
     session.add(row)
@@ -49,7 +49,8 @@ async def test_a_row_is_plain_readable_and_complete(session):
     assert got["sell_date_utc"] == "2026-03-02" and got["symbol"] == "SOLUSDT"
     assert got["buy_price_usd"] == "120.41"  # trailing zeros trimmed, no exponent
     assert (got["amount_operated"], got["total_buy_usd"], got["total_sell_usd"]) == ("0.129", "15.6533", "16.15338")
-    assert (got["fees_usd"], got["net_profit_usd"]) == ("0.03180668", "0.48392662")
+    assert (got["buy_fee_usd"], got["sell_fee_usd"]) == ("0.0156533", "0.01615338")
+    assert got["net_profit_usd"] == "0.48392662"
     assert got["buy_timestamp_utc"] == "2026-03-01T12:00:00Z" and got["sell_timestamp_utc"] == "2026-03-02T14:30:05Z"
     assert got["holding_days"] == "1.10"  # 26.5 hours
     assert got["exit_reason"] == "TAKE_PROFIT" and got["position_id"] == str(row.position_id)

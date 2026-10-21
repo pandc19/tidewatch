@@ -66,7 +66,7 @@ async def test_csv_sends_the_full_ledger_with_fees_and_net_profit(session):
     assert isinstance(result, Document) and result.filename == "tidewatch_ledger_2026.csv"
     lines = result.content.decode().splitlines()
     assert lines[0].startswith("sell_date_utc,sell_date_local,symbol")
-    assert "fees_usd" in lines[0] and "net_profit_usd" in lines[0]
+    assert "buy_fee_usd" in lines[0] and "sell_fee_usd" in lines[0] and "net_profit_usd" in lines[0]
     assert len(lines) == 2 and lines[1].startswith("2026-10-05,2026-10-04,SOLUSDT")  # UTC day, then Ecuador day
     assert "1 trade(s)" in result.caption and "America/Guayaquil" in result.caption
 

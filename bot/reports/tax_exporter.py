@@ -8,6 +8,11 @@ sale on the evening of 31 December still belongs to that year. `sell_date_local`
 `sell_date_utc` and the timestamps stay in UTC. USDT is treated as USD. Numbers are plain decimals (no exponent, trailing
 zeros trimmed) and timestamps are ISO 8601 in UTC, so the file opens cleanly in a spreadsheet
 or an accountant's tool. This is a record of trades, not tax advice.
+
+Each row adds up by hand: ``net_profit_usd = total_sell_usd - total_buy_usd - buy_fee_usd -
+sell_fee_usd``. ``total_buy_usd`` and ``total_sell_usd`` are the coins sold (``amount_operated``)
+at the buy and sell price; coins bought but not sold (the coin fee, rounding leftovers) are not
+in the row. ``buy_fee_usd`` is the buy's fee for the share of the bought coins that was sold.
 """
 
 from __future__ import annotations
@@ -41,7 +46,8 @@ COLUMNS = [
     "sell_price_usd",
     "total_buy_usd",
     "total_sell_usd",
-    "fees_usd",
+    "buy_fee_usd",
+    "sell_fee_usd",
     "net_profit_usd",
     "buy_timestamp_utc",
     "sell_timestamp_utc",
@@ -73,7 +79,8 @@ def _row(entry: TaxLedger, exit_reason: str | None, tz: ZoneInfo) -> list[str]:
         format_decimal(entry.sell_price_usd),
         format_decimal(entry.total_buy_usd),
         format_decimal(entry.total_sell_usd),
-        format_decimal(entry.fees_usd),
+        format_decimal(entry.buy_fee_usd),
+        format_decimal(entry.sell_fee_usd),
         format_decimal(entry.net_profit_usd),
         _iso(entry.buy_timestamp),
         _iso(entry.sell_timestamp),

@@ -183,7 +183,7 @@ The container applies migrations, then starts the bot. Compose never starts a da
 .venv/bin/python -m bot.reports.tax_exporter                 # every trade
 ```
 
-One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and how it ended. `--year` and `/csv` cut the year by Ecuador days (`REPORT_TIMEZONE`), so a sale on the evening of 31 December stays in that year; `sell_date_local` is that day and `sell_date_utc` the UTC one.
+One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and how it ended. Each row adds up by hand: `net_profit_usd = total_sell_usd - total_buy_usd - buy_fee_usd - sell_fee_usd`, where both totals are for the coins sold (`amount_operated`). Coins you bought but did not sell (the 0.1% coin fee, and the leftover from rounding the sell down to a quantity step) stay in your account and are not in the row. `--year` and `/csv` cut the year by Ecuador days (`REPORT_TIMEZONE`), so a sale on the evening of 31 December stays in that year; `sell_date_local` is that day and `sell_date_utc` the UTC one.
 
 **The sales sheet.** The same trades in your spreadsheet's layout, `Venta` rows only, ready to paste:
 
@@ -192,7 +192,7 @@ One row per closed trade: prices, totals, fees, net profit, timestamps (UTC) and
 .venv/bin/python -m bot.reports.sales_sheet --year 2026 --out ventas.txt  # or a file; add --header for the title row
 ```
 
-Tab-separated, Spanish format (`0,128`, `$118,2000`, `$15,55`), the date is the day in Ecuador (`REPORT_TIMEZONE`), and there are no fees: `Monto Directo` is quantity x sell price and `Monto` is the gross profit, quantity x (sell price - buy price). The CSV above keeps the fees and the net profit, so the two differ by the fees. From Telegram (with `TELEGRAM_COMMANDS=true`): `/csv [year|all]` and `/report [year|yyyy-mm]` send these as files. To try them before there are real trades, `scripts/seed_demo_sales.sql` adds two fake sales (your SOL and GTC rows) to a local database; remove them with `scripts/reset_db.py local`. The tax year is the UTC year of the *sale*; USDT is treated as USD. This is a record of trades, not tax advice. Ask an accountant how your country wants it reported.
+Tab-separated, Spanish format (`0,128`, `$118,2000`, `$15,55`), the date is the day in Ecuador (`REPORT_TIMEZONE`), and there are no fees: `Monto Directo` is quantity x sell price and `Monto` is the gross profit, quantity x (sell price - buy price). The CSV above keeps the fees and the net profit, so the two differ by exactly the two fees: `Monto` = `total_sell_usd - total_buy_usd`. From Telegram (with `TELEGRAM_COMMANDS=true`): `/csv [year|all]` and `/report [year|yyyy-mm]` send these as files. To try them before there are real trades, `scripts/seed_demo_sales.sql` adds two fake sales (your SOL and GTC rows) to a local database; remove them with `scripts/reset_db.py local`. The tax year is the UTC year of the *sale*; USDT is treated as USD. This is a record of trades, not tax advice. Ask an accountant how your country wants it reported.
 
 ## Common problems
 

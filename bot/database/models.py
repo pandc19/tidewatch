@@ -216,7 +216,10 @@ class TaxLedger(Base):
     sell_price_usd: Mapped[Decimal] = mapped_column(NUMERIC)
     total_buy_usd: Mapped[Decimal] = mapped_column(NUMERIC)
     total_sell_usd: Mapped[Decimal] = mapped_column(NUMERIC)
-    fees_usd: Mapped[Decimal] = mapped_column(NUMERIC, default=Decimal(0), server_default="0")
+    # net_profit_usd = total_sell_usd - total_buy_usd - buy_fee_usd - sell_fee_usd
+    buy_fee_usd: Mapped[Decimal] = mapped_column(NUMERIC, default=Decimal(0), server_default="0")
+    sell_fee_usd: Mapped[Decimal] = mapped_column(NUMERIC, default=Decimal(0), server_default="0")
+    fees_usd: Mapped[Decimal] = mapped_column(NUMERIC, default=Decimal(0), server_default="0")  # buy + sell
     net_profit_usd: Mapped[Decimal] = mapped_column(NUMERIC)
     buy_timestamp: Mapped[datetime] = _timestamptz()
     sell_timestamp: Mapped[datetime] = _timestamptz()

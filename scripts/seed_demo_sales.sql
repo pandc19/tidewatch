@@ -5,7 +5,7 @@
 --
 -- Local databases only, never the rehearsal or a real one. Remove them afterwards with
 --   .venv/bin/python scripts/reset_db.py local
--- (that empties the whole database). Fees 0.03 USD per trade; the net profit is after fees.
+-- (that empties the whole database). Fees 0.03 USD per trade (0.015 buy, 0.015 sell); the net profit is after fees.
 
 WITH closed AS (
   INSERT INTO positions (symbol, status, quantity, entry_price, exit_price, take_profit_pct, stop_loss_pct,
@@ -18,8 +18,9 @@ WITH closed AS (
   RETURNING id, symbol
 )
 INSERT INTO tax_ledger (position_id, symbol, amount_operated, buy_price_usd, sell_price_usd,
-                        total_buy_usd, total_sell_usd, fees_usd, net_profit_usd, buy_timestamp, sell_timestamp)
-SELECT closed.id, v.symbol, v.qty, v.buy, v.sell, v.qty * v.buy, v.qty * v.sell, 0.03, v.net,
+                        total_buy_usd, total_sell_usd, buy_fee_usd, sell_fee_usd, fees_usd, net_profit_usd,
+                        buy_timestamp, sell_timestamp)
+SELECT closed.id, v.symbol, v.qty, v.buy, v.sell, v.qty * v.buy, v.qty * v.sell, 0.015, 0.015, 0.03, v.net,
        v.bought::timestamptz, v.sold::timestamptz
 FROM closed
 JOIN (VALUES
