@@ -49,7 +49,7 @@ from bot.database.models import (
     PositionStatus,
     TaxLedger,
 )
-from bot.engine.ledger import TradeResult, compute_trade_result, fee_value, is_cash_fee
+from bot.engine.ledger import TradeResult, compute_trade_result, fee_value
 from bot.services.binance_client import (
     ExchangeClient,
     ExchangeError,
@@ -657,12 +657,11 @@ class TradingEngine:
             symbol=symbol,
             buy_qty=buy.filled_qty,
             buy_price=buy.avg_fill_price,
+            buy_coin_fee=(buy.commission or Decimal(0)) if buy.commission_asset == filters.base_asset else Decimal(0),
             sell_qty=sell.filled_qty,
             sell_price=sell.avg_fill_price,
             buy_fee_value=buy_fee,
             sell_fee_value=sell_fee,
-            buy_fee_is_cash=is_cash_fee(OrderSide.BUY, buy.commission_asset, filters.base_asset),
-            sell_fee_is_cash=is_cash_fee(OrderSide.SELL, sell.commission_asset, filters.base_asset),
             buy_time=buy.filled_at or position.opened_at or now,
             sell_time=sell.filled_at or now,
         )
@@ -687,6 +686,7 @@ class TradingEngine:
                     amount_operated=result.amount_operated,
                     buy_price_usd=result.buy_price, sell_price_usd=result.sell_price,
                     total_buy_usd=result.total_buy, total_sell_usd=result.total_sell,
+                    buy_fee_usd=result.buy_fee_usd, sell_fee_usd=result.sell_fee_usd,
                     fees_usd=result.fees_usd, net_profit_usd=result.net_profit,
                     buy_timestamp=result.buy_time, sell_timestamp=result.sell_time,
                 )

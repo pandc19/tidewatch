@@ -34,7 +34,7 @@ where status in ('NEW','PARTIALLY_FILLED');
 
 -- 6. Tax ledger: one row per closed trade
 select sell_timestamp, symbol, amount_operated, buy_price_usd, sell_price_usd,
-       total_buy_usd, total_sell_usd, fees_usd, net_profit_usd, buy_timestamp
+       total_buy_usd, total_sell_usd, buy_fee_usd, sell_fee_usd, net_profit_usd, buy_timestamp
 from tax_ledger
 order by sell_timestamp desc;
 

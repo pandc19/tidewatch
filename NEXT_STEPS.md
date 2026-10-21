@@ -16,9 +16,8 @@ The bot, token and chat ID work against real Telegram (`--test` arrived on the p
 
 The bot runs on Coolify against the testnet with `DRY_RUN=false`, `ALLOCATION_PCT=0.0016` and `DAILY_LOSS_LIMIT_PCT=0.00005`. Nothing is wrong if it stays quiet: the signal fired about once every one to three days in the replay. While it runs, look for:
 
-- **The first trade:** the alerts and how the `<pre>` tables look on the phone; the filled buy's `commission` and `commission_asset` in `orders`.
-- **Both ways out:** at least one close by take-profit and one by stop-loss, and each OCO's other leg ending `CANCELED` or `EXPIRED`.
-- **A deploy with a position open:** the exit orders stay on the exchange and the new instance reconciles (not yet seen).
+- **The alerts' look on the phone:** the `<pre>` tables of the buy, protection and close alerts (the first trade, 2026-10-21, sent all three).
+- **The take-profit way out:** a close by take-profit and its other leg ending `CANCELED` or `EXPIRED`. A stop-loss close was seen on 2026-10-21 (the take-profit leg ended `EXPIRED`), and a deploy with that position open reconciled cleanly.
 - **The account stream:** how often it fails to subscribe, and any "unprotected" or "needs your attention" alert.
 - **Coolify:** the application stays healthy; the stop timeout is 40 s or more.
 
@@ -44,7 +43,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 - **The kill-switch with real losing trades.** Tested against the real database with fabricated losses only.
 - **The re-based emergency stop** on the live exchange (needs a price that fell through the stop). Tested against a fake that raises Binance's refusal.
 - **An OCO leg actually filling** live: the counterpart's real status (`CANCELED` or `EXPIRED`) is tested against a fake only. Both are handled.
-- **Fee math.** The testnet's commission rates read 0 until you set them to 0.1% maker and taker on 2026-10-19 (the startup check now logs 0.001; whether fills actually charge it, and in which asset, is not yet seen). The real rate (0.1% per side is assumed) and the coin fee that shrinks the sellable quantity show up only with real trades.
+- **Fee math.** The testnet's commission rates read 0 until you set them to 0.1% maker and taker on 2026-10-19 and the fills charge it: a 2026-10-21 trade paid 0.1% in the coin bought on the buy (0.0000114 of 0.0114 SNDKB) and 0.1% in USDT on the sell. Still unseen: the real mainnet rate (0.1% per side is assumed).
 - **Partial fills** live, and the stream dropping mid-trade. The account stream failed to subscribe for about 30 seconds once during testing ("Request timed out"); the engine kept working through its polling safety net and the stream reconnected with backoff. Worth watching how often it happens.
 - **Failed-subscription cleanup.** After a failed subscribe the library kept trying to reconnect in the background, and `close_connection()` takes about 10 seconds. Check that repeated failures don't leak sockets or duplicate subscriptions.
 - **Dry run simulates no fills**: a dry-run entry only records the intent and times out.
@@ -78,7 +77,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 - **Email delivery of the reports** (Mailgun, three variables `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_FROM_EMAIL`, as in the owner's insight-engine). Not built: today `/csv` and `/report` arrive as Telegram files. Decide whether email should replace or add to that, and whether it should also send a monthly report on a schedule.
 
 - Whether Binance's "convert small balances to BNB" can be triggered through the API.
-- Ask an accountant whether treating USDT as USD is acceptable for tax reporting, and how the swept leftover coin (under one quantity step, from an earlier trade) should be costed in `tax_ledger`.
+- Ask an accountant whether treating USDT as USD is acceptable for tax reporting, and how a leftover coin (the coin fee and the rounding of a sale down to a quantity step stay in the account, are not booked as a loss, and under one step are swept into the next sale of that coin, costed at that trade's buy price) should be treated in `tax_ledger`.
 - Whether GTC/USDT keeps passing the 0.2% spread filter. One snapshot on 2026-10-06 showed 0.04% (BTC, ETH, SOL, BNB, XRP were all under 0.01%); sample it over several days before relying on it.
 - Pick the managed database provider, then test the real connection: SSL (`sslmode` conversion is tested, a real server is not), a pooler endpoint vs the direct one (insight-engine found pooled Neon breaks asyncpg; the direct endpoint is the working choice), and that the DB user can create tables. The droplet guide has not been run anywhere.
 - The restart policy is now `RESTART_POLICY` in `.env` (default `no`). Set `unless-stopped` when the bot should run unattended, after the signal decision above.

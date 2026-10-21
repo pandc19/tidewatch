@@ -54,7 +54,7 @@ def result(net=None, total_buy=None) -> TradeResult:
     total_buy = D("15.6533") if total_buy is None else total_buy
     return TradeResult(
         symbol="SOLUSDT", amount_operated=D("0.129"), buy_price=D("120.41"), sell_price=D("125.22"),
-        total_buy=total_buy, total_sell=D("16.15"), fees_usd=D("0.03"), net_profit=net,
+        total_buy=total_buy, total_sell=D("16.15"), buy_fee_usd=D("0.015"), sell_fee_usd=D("0.015"), net_profit=net,
         buy_time=WHEN - timedelta(hours=2), sell_time=WHEN,
     )
 

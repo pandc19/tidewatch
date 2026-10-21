@@ -1,26 +1,27 @@
 """Profit and loss of one closed trade. Pure maths: no database, no exchange.
 
-USDT is treated as USD. Rules:
+USDT is treated as USD. One rule, so the numbers can be checked by hand:
 
-* ``total_buy`` is what the buy cost, ``total_sell`` what the sell returned.
-* A fee taken *in the coin on a buy* (Binance's default) is **not** subtracted again:
-  those coins are simply missing from what was sold, so ``total_sell`` already
-  reflects it.
-* Every other fee is a real outflow and is subtracted: the quote-asset fee on a sell,
-  and any BNB fee, valued in the quote asset.
-* ``fees_usd`` records the value of *all* fees (for reporting), so it can be larger
-  than what was subtracted.
+    net profit = total_sell - total_buy - buy_fee - sell_fee
+
+* ``total_sell`` is the coins sold times the sell price.
+* ``total_buy`` is the *same* coins times the buy price. Coins bought but not sold (the coin
+  fee on the buy, and what rounding the sell down to a quantity step leaves behind) are not
+  part of this trade: they stay in the account and are not booked as a loss.
+* ``buy_fee`` is the buy's fee in USD, in whatever asset it was paid (the coin bought, BNB,
+  USDT), counted for the share of the bought coins that were sold. ``sell_fee`` is the sell's.
+* ``fees_usd`` is ``buy_fee + sell_fee``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
-
-from bot.database.models import OrderSide
+from decimal import ROUND_HALF_UP, Decimal
 
 ZERO = Decimal(0)
+ONE = Decimal(1)
+EIGHT_PLACES = Decimal("1e-8")
 
 
 def fee_value(
@@ -47,27 +48,27 @@ def fee_value(
     return commission * asset_price
 
 
-def is_cash_fee(side: OrderSide, asset: str | None, base: str) -> bool:
-    """False only for the coin fee on a buy, which the lower sold quantity already reflects."""
-    return not (side == OrderSide.BUY and asset == base)
-
-
 @dataclass(frozen=True)
 class TradeResult:
     symbol: str
     amount_operated: Decimal  # quantity sold
     buy_price: Decimal
     sell_price: Decimal
-    total_buy: Decimal
-    total_sell: Decimal
-    fees_usd: Decimal
+    total_buy: Decimal  # amount_operated x buy_price
+    total_sell: Decimal  # amount_operated x sell_price
+    buy_fee_usd: Decimal  # the buy's fee, for the part of the bought coins that was sold
+    sell_fee_usd: Decimal
     net_profit: Decimal
     buy_time: datetime
     sell_time: datetime
 
     @property
+    def fees_usd(self) -> Decimal:
+        return self.buy_fee_usd + self.sell_fee_usd
+
+    @property
     def return_pct(self) -> Decimal:
-        """Net return on the cash spent, as a fraction (0.04 = 4%)."""
+        """Net return on the cost of the coins sold, as a fraction (0.04 = 4%)."""
         return self.net_profit / self.total_buy if self.total_buy else ZERO
 
 
@@ -76,20 +77,22 @@ def compute_trade_result(
     symbol: str,
     buy_qty: Decimal,
     buy_price: Decimal,
+    buy_coin_fee: Decimal,
     sell_qty: Decimal,
     sell_price: Decimal,
     buy_fee_value: Decimal,
     sell_fee_value: Decimal,
-    buy_fee_is_cash: bool,
-    sell_fee_is_cash: bool,
     buy_time: datetime,
     sell_time: datetime,
 ) -> TradeResult:
-    total_buy = buy_qty * buy_price
+    """`buy_coin_fee` is the part of the buy's fee paid in the coin itself (0 for BNB or USDT)."""
+    received = buy_qty - buy_coin_fee
+    # The share of the bought coins that this sale covers. Over 100% happens when a leftover
+    # from an earlier trade was swept in; the extra coins are costed at this buy price.
+    sold_share = min(ONE, sell_qty / received) if received > 0 else ZERO
+    buy_fee_usd = (buy_fee_value * sold_share).quantize(EIGHT_PLACES, rounding=ROUND_HALF_UP)
+    total_buy = sell_qty * buy_price
     total_sell = sell_qty * sell_price
-    cash_fees = (buy_fee_value if buy_fee_is_cash else ZERO) + (
-        sell_fee_value if sell_fee_is_cash else ZERO
-    )
     return TradeResult(
         symbol=symbol,
         amount_operated=sell_qty,
@@ -97,8 +100,9 @@ def compute_trade_result(
         sell_price=sell_price,
         total_buy=total_buy,
         total_sell=total_sell,
-        fees_usd=buy_fee_value + sell_fee_value,
-        net_profit=total_sell - total_buy - cash_fees,
+        buy_fee_usd=buy_fee_usd,
+        sell_fee_usd=sell_fee_value,
+        net_profit=total_sell - total_buy - buy_fee_usd - sell_fee_value,
         buy_time=buy_time,
         sell_time=sell_time,
     )

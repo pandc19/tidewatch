@@ -185,14 +185,18 @@ async def test_take_profit_closes_the_trade_and_writes_the_ledger(h):
     pos = await h.position()
     assert pos.status == PositionStatus.CLOSED and pos.exit_reason == ExitReason.TAKE_PROFIT
     assert pos.exit_price == D("125.22")
-    # sold 0.129 for 16.15338, bought 0.130 for 15.6533, paid 0.01615338 USDT fee on the sell.
-    # The 0.1% SOL fee on the buy is already in "sold 0.129, not 0.130": not subtracted twice.
-    expected = D("16.15338") - D("15.6533") - D("0.01615338")
+    # Sold 0.129 for 16.15338. Those coins cost 0.129 x 120.41. Of the 0.12987 received (0.130 less
+    # the 0.1% SOL fee) 0.129 were sold, so that share of the buy fee counts, plus the 0.01615338
+    # USDT fee on the sell. The 0.00087 SOL left over is not booked as spent.
+    cost = D("0.129") * D("120.41")
+    buy_fee = (D("0.00013") * D("120.41") * (D("0.129") / D("0.12987"))).quantize(D("1e-8"))
+    expected = D("16.15338") - cost - buy_fee - D("0.01615338")
     assert pos.realized_pnl_usd == expected
     (row,) = (await h.session.scalars(select(TaxLedger))).all()
     assert (row.amount_operated, row.buy_price_usd, row.sell_price_usd) == (D("0.129"), D("120.41"), D("125.22"))
-    assert (row.total_buy_usd, row.total_sell_usd, row.net_profit_usd) == (D("15.6533"), D("16.15338"), expected)
-    assert row.fees_usd == D("0.0156533") + D("0.01615338")  # all fees reported
+    assert (row.total_buy_usd, row.total_sell_usd, row.net_profit_usd) == (cost, D("16.15338"), expected)
+    assert (row.buy_fee_usd, row.sell_fee_usd) == (buy_fee, D("0.01615338"))
+    assert row.fees_usd == row.buy_fee_usd + row.sell_fee_usd
     assert row.sell_timestamp == FILL_TIME
     day = await h.session.get(DailyPnl, FILL_TIME.date())
     assert day.realized_pnl_usd == expected
@@ -518,8 +522,10 @@ async def test_a_sale_made_by_hand_closes_the_position_as_manual(h):
     pos = await h.position()
     assert pos.status == PositionStatus.CLOSED and pos.exit_reason == ExitReason.MANUAL
     assert pos.exit_price == D("123.00") and pos.opened_at <= pos.closed_at
-    # 0.129 x 123 = 15.867 back; 0.130 x 120.41 = 15.6533 spent; 0.015867 USDT fee on the sale
-    expected = D("15.867") - D("15.6533") - D("0.015867")
+    # 0.129 x 123 = 15.867 back for coins that cost 0.129 x 120.41; the SOL fee on the buy counts
+    # for the 0.129 sold of the 0.12987 received; 0.015867 USDT fee on the sale
+    buy_fee = (D("0.00013") * D("120.41") * (D("0.129") / D("0.12987"))).quantize(D("1e-8"))
+    expected = D("15.867") - D("0.129") * D("120.41") - buy_fee - D("0.015867")
     assert pos.realized_pnl_usd == expected
     (row,) = (await h.session.scalars(select(TaxLedger))).all()
     assert (row.amount_operated, row.net_profit_usd) == (D("0.129"), expected)
@@ -706,6 +712,7 @@ async def test_a_fee_paid_in_bnb_is_a_real_cost_and_leaves_the_quantity_whole(h)
     (row,) = (await h.session.scalars(select(TaxLedger))).all()
     bnb_buy_fee = D("0.0002") * D("120")  # the fake prices every pair at 120
     sell_fee = D("0.130") * D("125.22") * D("0.001")
+    assert (row.buy_fee_usd, row.sell_fee_usd) == (bnb_buy_fee, sell_fee)
     assert row.net_profit_usd == row.total_sell_usd - row.total_buy_usd - bnb_buy_fee - sell_fee
 
 

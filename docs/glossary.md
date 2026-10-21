@@ -50,11 +50,11 @@ The trading and operations words used in this project, with the meaning they hav
 | **Exit reason** | `TAKE_PROFIT`, `STOP_LOSS`, or `MANUAL` (you sold the coins yourself). |
 | **Allocation** | The share of the free quote balance each trade uses. `ALLOCATION_PCT=0.98` by default; the testnet rehearsal uses `0.0016` (about 16 USDT) to imitate a small wallet. |
 | **Realised PnL** | Profit or loss of a closed trade, in USD. Open positions have none yet. |
-| **Net profit / return %** | Realised PnL after fees; the same as a share of the cost. |
+| **Net profit / return %** | Realised PnL after fees: `total_sell - total_buy - buy_fee - sell_fee`, both totals for the coins sold. Return is that as a share of `total_buy`. |
 | **Break-even win rate** | The share of trades that must hit the take-profit to cover the stops and the fees. With a 4% target, a 2% stop and 0.2% fees it is **36.7%**. The replay won 33%. |
 | **Edge** | A real, repeatable advantage. The entry signal has **no demonstrated edge** (ADR-006): do not call it profitable. |
 | **Reporte de ventas (sales sheet)** | The ledger as `Venta` rows in the owner's spreadsheet columns: Fecha, Plataforma, Tipo, Motivo, Observaciones, Cantidad Operada, Precio Unitario de Compra / de Venta, Monto Directo, Monto. Tab-separated Spanish format, Ecuador dates, no fees. `Monto Directo` = quantity x sell price; `Monto` = gross profit. |
-| **Gross vs net profit** | Gross is quantity x (sell price - buy price), what the sheet records. Net is what the bot books after fees are subtracted (never added), so it is a little lower. The CSV has both the fees and the net. |
+| **Gross vs net profit** | Gross is quantity x (sell price - buy price), what the sheet records. Net is what the bot books after the buy fee and the sell fee are subtracted (never added), so it is a little lower: gross minus `buy_fee_usd` minus `sell_fee_usd`. The CSV has both fees and the net. |
 | **Tax ledger** | One row per closed trade: prices, totals, fees, net profit, UTC timestamps. The record for capital-gains reporting (`tax_exporter`). |
 
 ## Fees and exchange limits
@@ -64,7 +64,7 @@ The trading and operations words used in this project, with the meaning they hav
 | **Commission (fee)** | What Binance charges per trade: 0.1% per side on this account. Paid in the coin received, so buying 0.0082 ETH leaves a little less than that to sell. |
 | **Commission asset** | The coin the fee was taken in (`orders.commission_asset`). |
 | **Round-trip fee** | A buy plus a sell: about **0.2%**. A take-profit must be larger than this (`TAKE_PROFIT_PCT` is checked at startup). |
-| **Dust** | Leftover coin below the smallest sellable step, for example after rounding the sell quantity down. |
+| **Dust** | Leftover coin below the smallest sellable step, for example after rounding the sell quantity down, or the coin fee taken from a buy. It stays in the account, is not booked as a loss, and is swept into the next sale of that coin when it is under one step. |
 | **Filters** | Binance's rules for a pair, read at startup: **step size** (quantity increments), **tick size** (price increments), **min quantity**, and **min notional** (the smallest order value, about $5). Every price and quantity is rounded to them before it is sent. |
 | **Protectable trade** | A trade big enough that its stop-loss sell still meets the minimum order value after the fee. Smaller trades are refused. |
 | **Region block** | Binance refuses requests from some regions (US addresses). A blocked server fails the startup checks. |
