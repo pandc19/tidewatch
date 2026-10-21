@@ -192,7 +192,7 @@ async def test_it_reports_what_it_saw_once_an_hour_even_without_a_signal(world, 
         clock["t"] += 61
         await scanner.next_entry()  # within the hour: silent
         assert [r.message for r in caplog.records if r.message.startswith("scan:")] == [(
-            "scan: 1 pair(s) checked, 0 failed, 0 signal(s); closest to oversold: SOLUSDT lowest RSI 50.0 "
+            "scan: 1 pair(s) checked, 0 unreadable, 0 signal(s); closest to oversold: SOLUSDT lowest RSI 50.0 "
             "of the last 6 candles (signal needs <= 30, then a cross up through the EMA)"
         )]
         clock["t"] += 3600
