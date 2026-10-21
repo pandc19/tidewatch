@@ -126,7 +126,7 @@ class Scanner:
         if self._lows:
             symbol, low = min(self._lows.items(), key=lambda kv: kv[1])
             closest = f"closest to oversold: {symbol} lowest RSI {low:.1f} of the last {self._s.rsi_lookback} candles"
-        log.info("scan: %d pair(s) checked, %d failed, %d signal(s); %s (signal needs <= %s, then a cross up through the EMA)",
+        log.info("scan: %d pair(s) checked, %d unreadable, %d signal(s); %s (signal needs <= %s, then a cross up through the EMA)",
                  pairs, self._failed, signals, closest, self._s.rsi_oversold)
 
     async def _check(self, symbol: str) -> Candidate | None:
