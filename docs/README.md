@@ -9,6 +9,7 @@
 - [git-flow.md](git-flow.md): branches, PRs, commit conventions, CI and the GitHub settings to apply
 - [guides/code-flow.md](guides/code-flow.md): how one trade moves through the system, and why
 - [guides/running-modes.md](guides/running-modes.md): dry run vs demo vs rehearsal, one bot per testnet account, resetting a database; with [guides/queries.sql](guides/queries.sql) for DBeaver
+- [guides/replay.md](guides/replay.md): the replay tool, which tests the entry and exit rules on past candles (no database, no keys)
 - [guides/developer-guide.md](guides/developer-guide.md): conventions, tests, migrations, adding things
 
 ## Operations
@@ -36,6 +37,7 @@ docs/
 ├── guides/
 │   ├── code-flow.md
 │   ├── developer-guide.md
+│   ├── replay.md
 │   ├── running-modes.md
 │   └── queries.sql
 └── adr/
