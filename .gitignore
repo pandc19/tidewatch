@@ -13,3 +13,4 @@ exports/
 .DS_Store
 .idea/
 .vscode/
+data/

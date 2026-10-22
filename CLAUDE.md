@@ -21,6 +21,7 @@ uv sync --python 3.12
 .venv/bin/python -m bot.main               # startup checks, then the engine (Ctrl+C stops it)
 .venv/bin/python -m bot.main --check-only   # startup checks only
 .venv/bin/python -m bot.reports.tax_exporter --year 2026   # tax ledger to exports/tax_ledger_2026.csv
+.venv/bin/python -m bot.replay --days 250   # entry/exit rules on past candles: public data, no DB, no keys (docs/guides/replay.md)
 ```
 
 ## Critical rules
@@ -43,4 +44,4 @@ uv sync --python 3.12
 
 ## Layout
 
-`bot/config` (settings, precision), `bot/database` (connection, models), `bot/services` (binance_client, user_stream, reconciliation, risk_manager, scanner, indicators), `bot/engine` (state_machine, runner, ledger), `bot/engine`, `bot/reports`, `migrations/`, `scripts/` (local.sh, preflight.sh), `tests/`, `docs/`.
+`bot/config` (settings, precision), `bot/database` (connection, models), `bot/services` (binance_client, user_stream, reconciliation, risk_manager, scanner, indicators), `bot/engine` (state_machine, runner, ledger), `bot/engine`, `bot/reports`, `bot/replay`, `migrations/`, `scripts/` (local.sh, preflight.sh), `tests/`, `docs/`.

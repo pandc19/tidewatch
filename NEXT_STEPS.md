@@ -29,7 +29,7 @@ The RSI-oversold + EMA cross-up rule is a placeholder I chose, not a validated s
 
 Options (they combine):
 1. **Run it on the testnet and in dry-run for a few weeks** and look at real behaviour before any real money. Costs nothing.
-2. **A careful parameter study** (RSI threshold, candle size, lookback, EMA period, TP/SL ratio) with an out-of-sample split so it is not just curve-fitted. I can build a small replay tool for this.
+2. **A careful parameter study** (RSI threshold, candle size, lookback, EMA period, TP/SL ratio) with an out-of-sample split so it is not just curve-fitted. The replay tool exists now (`python -m bot.replay`, [docs/guides/replay.md](docs/guides/replay.md)); the study itself is not done.
 3. **Accept it as a plumbing test** and treat all real-money use as not ready.
 
 My recommendation: 1 now, 2 before real money. Nothing in the code should be described as profitable until then.
@@ -60,7 +60,7 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 
 ## Later
 
-- **A replay/backtest tool** for the entry signal (see the decision above). Also useful: a re-entry cooldown, so a position that just closed cannot be reopened on the same signal candle.
+- **A re-entry cooldown**, so a position that just closed cannot be reopened on the same signal candle (the replay tool, [docs/guides/replay.md](docs/guides/replay.md), shows whether it matters).
 - **`order_fills` table.** An order that paid commission in two assets (for example BNB for part of it) can't be represented by one commission column; the code keeps the larger one and logs an error. Fills would also be the cleanest source for the tax ledger.
 - **Pay fees in BNB.** Removes leftovers entirely and gives a fee discount. Needs about $5 of BNB, so wait until the wallet is bigger. Turn on "Use BNB to pay fees" in Binance; the engine already values BNB fees.
 - **Percentage-based trade size and more than one position.** Only workable from roughly $60 upward, because Binance's minimum order is $5 (checked for SOL/USDT on 2026-10-06). `MAX_OPEN_POSITIONS` already exists.
