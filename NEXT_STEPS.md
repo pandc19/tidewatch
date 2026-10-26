@@ -14,7 +14,7 @@ The bot, token and chat ID work against real Telegram (`--test` arrived on the p
 
 ## Monitoring the testnet rehearsal (running since 2026-10-19, a few days)
 
-The bot runs on Coolify against the testnet with `DRY_RUN=false`, `ALLOCATION_PCT=0.0016` and `DAILY_LOSS_LIMIT_PCT=0.00005`. Nothing is wrong if it stays quiet: the signal fired about once every one to three days in the replay. While it runs, look for:
+The bot runs on Coolify against the testnet with `DRY_RUN=false`, `ALLOCATION_PCT=0.0016` and `DAILY_LOSS_LIMIT_PCT=0.00005`. **The code that ran was older than its tag:** the container tagged e4756c3 (#17) held a cached build from between #14 and #17 (seen 2026-10-26: the TRX close on 10-25 was booked with the old ledger rule). The Dockerfile fix forces the rebuild; count the rehearsal from the first deploy after it, and confirm the running code as in [docs/coolify.md](docs/coolify.md). Nothing is wrong if it stays quiet: the signal fired about once every one to three days in the replay. While it runs, look for:
 
 - **The alerts' look on the phone:** the `<pre>` tables of the buy, protection and close alerts (the first trade, 2026-10-21, sent all three).
 - **The take-profit way out:** a close by take-profit and its other leg ending `CANCELED` or `EXPIRED`. A stop-loss close was seen on 2026-10-21 (the take-profit leg ended `EXPIRED`), and a deploy with that position open reconciled cleanly.

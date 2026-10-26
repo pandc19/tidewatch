@@ -61,6 +61,13 @@ Keep this table and `.env.example` in sync when a variable is added. The names `
 4. The new container takes the lock, reconciles with Binance, and carries on. Open positions keep their exit orders on the exchange throughout; the bot never sells by itself.
 5. If the new container never gets the lock (10 minutes by default) or dies, the deployment fails and the old one keeps running.
 
+**Check the code that runs, not the tag.** Until 2026-10-26 the build could install an older copy of `bot/` from uv's cache while the image was tagged with the new commit (the migrations, copied separately, were current). The Dockerfile now forces the rebuild and fails if the installed bot differs from the source. After a deploy that matters, look inside the container on the droplet:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Image}}' | grep <app-uuid>
+docker exec <container> grep -n "<a line the change added>" /opt/venv/lib/python3.12/site-packages/bot/<file>.py
+```
+
 Steps 2 to 4 are seen with plain containers and on Coolify (see Status). Each deploy sends a "stopped" and a "started" alert. Coolify waits the whole start period (45 s now, 120 s on the first two deploys) before its first health check, so the new container waits about that long for the lock. Not tested: a hand-over with an open position, and what Coolify does when the stop takes longer than its timeout.
 
 ## Binance and the server
