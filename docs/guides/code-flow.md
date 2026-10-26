@@ -22,7 +22,7 @@ How one trade moves through the system, and why each step is shaped the way it i
 
 `Scanner` (an `EntrySource`) runs at most every `SCAN_EVERY_SECONDS`. For each pair in `SYMBOLS` (or, with `SYMBOLS_AUTO=true`, the hourly-refreshed list from [universe.py](../../bot/services/universe.py), ADR-009) it takes the closed candles (the one still forming is dropped), computes RSI and EMA ([indicators.py](../../bot/services/indicators.py), checked against StockCharts' published examples) and applies one rule: RSI was at or below `RSI_OVERSOLD` within the last `RSI_LOOKBACK` candles **and** the latest close crossed up through the EMA (so a dip signals on exactly one candle). Signalling pairs with a spread over `MAX_SPREAD_PCT` are dropped; the lowest RSI of the rest wins, and the entry is a limit buy at the best bid (optionally `ENTRY_DISCOUNT_PCT` below).
 
-**Honest caveat:** this rule is a placeholder. Replayed on 250 days of hourly history it won 33% of the time against the 36.7% needed (ADR-006). The engine does the gating and sizing: `size_entry` rounds down to the step and refuses a trade whose stop-loss sell could not be placed after fees (Binance's minimum order value).
+**Honest caveat:** this rule is a placeholder. Replayed on 250 days of hourly history it won 33% of the time against the 36.7% needed, and a 3-year parameter study found no setting with an edge (ADR-006). The engine does the gating and sizing: `size_entry` rounds down to the step and refuses a trade whose stop-loss sell could not be placed after fees (Binance's minimum order value).
 
 ## 3. Place the entry (built, phase 3)
 

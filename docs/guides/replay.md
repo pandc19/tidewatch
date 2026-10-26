@@ -52,6 +52,20 @@ Rules of thumb:
 
 Nothing here makes the entry signal profitable (ADR-006): the replay can only show how it would have behaved, and the past is not the future.
 
+## The 2026-10 parameter study
+
+A one-off script around this package (not committed), run on 2026-10-26. The rules were set before any result was seen:
+
+- **Data:** 1h and 4h mainnet candles, 1,100 days (2023-10 to 2026-10), 10 pairs: BTC, ETH, SOL, BNB, XRP, DOGE, ADA, LINK, AVAX, LTC.
+- **Grid:** RSI oversold 20/25/30/35, lookback 3/6/12, EMA 9/21, and 13 exit rules (fixed, ATR, trailing, break-even): 598 settings with any signal. Fees 0.1% per side, slippage 0.05% on stops.
+- **Choosing and judging:** settings ranked on the first 70% only (to 2025-11-30), by the low end of the 95% range, needing at least 60 trades. The top 5 were judged once on the last 30%. To pass, a setting needed its range above zero there **and** to beat random entries with the same exit.
+- **Baseline:** random entry candles at a similar rate, 20 seeds, same exits and one-position loop.
+- **Fidelity:** signals came from the bot's own `evaluate_signal` on 200-candle windows. A fast prefilter only skipped candles that could not signal; on three pair/interval samples it matched `find_signals` exactly.
+
+Result: **nothing passed.** No setting's range was above zero even on the first 70%. Ranking on it did not predict the last 30% (Spearman −0.20). The signal averaged 0.05–0.07% per trade worse than random entries, which lose about the fees. The bot's own settings lost −0.59% per trade on the last 30% (124 trades, range −1.07% to −0.11%). The last 30% was a falling market, but the signal did not beat random entries in the rising part either.
+
+To test a new entry idea, repeat the study the same way: set the rules before the first run, choose on one period, judge once on a later one, and compare with random entries.
+
 ## Code
 
 `bot/replay/`: `candles.py` (download and cache), `exits.py` (the rules), `simulate.py` (signals and the one-position loop), `stats.py`, `report.py`, `__main__.py`. The candle download is `ExchangeClient.candles` in `bot/services/binance_client.py`, the only module that talks to Binance. Tests: `tests/test_replay.py`, no network.
