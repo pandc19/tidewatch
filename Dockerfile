@@ -11,9 +11,13 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 # Then the bot itself, installed (not editable) so the runner needs no source tree.
+# --reinstall-package: uv rebuilds a local project only when pyproject.toml changes, so with the
+# shared cache a build reused a wheel of older bot code (seen on Coolify, 2026-10-26). The diff
+# fails the build if the installed bot is not exactly the source just copied.
 COPY bot ./bot
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
+    uv sync --frozen --no-dev --no-editable --reinstall-package tidewatch \
+    && diff -r -x __pycache__ bot /opt/venv/lib/python3.12/site-packages/bot
 
 FROM python:3.12-slim AS runner
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/opt/venv/bin:$PATH
