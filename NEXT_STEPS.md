@@ -17,22 +17,25 @@ The bot, token and chat ID work against real Telegram (`--test` arrived on the p
 The bot runs on Coolify against the testnet with `DRY_RUN=false`, `ALLOCATION_PCT=0.0016` and `DAILY_LOSS_LIMIT_PCT=0.00005`. **The code that ran was older than its tag:** the container tagged e4756c3 (#17) held a cached build from between #14 and #17 (seen 2026-10-26: the TRX close on 10-25 was booked with the old ledger rule). The Dockerfile fix forces the rebuild; count the rehearsal from the first deploy after it, and confirm the running code as in [docs/coolify.md](docs/coolify.md). Nothing is wrong if it stays quiet: the signal fired about once every one to three days in the replay. While it runs, look for:
 
 - **The alerts' look on the phone:** the `<pre>` tables of the buy, protection and close alerts (the first trade, 2026-10-21, sent all three).
-- **The take-profit way out:** a close by take-profit and its other leg ending `CANCELED` or `EXPIRED`. A stop-loss close was seen on 2026-10-21 (the take-profit leg ended `EXPIRED`), and a deploy with that position open reconciled cleanly.
+- **The take-profit way out:** a close by take-profit and its other leg ending `CANCELED` or `EXPIRED`. Stop-loss closes were seen on 2026-10-21 and 2026-10-25 (the take-profit leg ended `EXPIRED` both times).
 - **The account stream:** how often it fails to subscribe, and any "unprotected" or "needs your attention" alert.
 - **Coolify:** the application stays healthy; the stop timeout is 40 s or more.
 
 ---
 
-## Decision needed from the owner: the entry signal has no demonstrated edge
+## Decision needed from the owner: the entry signal has no edge
 
-The RSI-oversold + EMA cross-up rule is a placeholder I chose, not a validated strategy. Replayed on about 250 days of hourly mainnet candles (BTC, ETH, SOL, BNB, XRP; 190 signals, one position at a time, a candle touching both levels counted as a loss), the 4% take-profit came before the 2% stop **33%** of the time. After ~0.2% fees you need **36.7%** to break even, so the expected result was about **−0.24% per trade before slippage**. At this sample size that is not conclusive either way (the gap is about one standard error), but it is certainly not evidence of an edge. Per pair: ETH 43%, BNB 38%, SOL 33%, BTC 27%, XRP 22%.
+The RSI-oversold + EMA cross-up rule is a placeholder I chose, not a validated strategy. The parameter study (2026-10-26, [docs/guides/replay.md](docs/guides/replay.md#the-2026-10-parameter-study)) found **no setting with an edge**: 598 settings over about 3 years of mainnet candles on 10 pairs, chosen on the first 70% and judged on the last 30%.
 
-Options (they combine):
-1. **Run it on the testnet and in dry-run for a few weeks** and look at real behaviour before any real money. Costs nothing.
-2. **A careful parameter study** (RSI threshold, candle size, lookback, EMA period, TP/SL ratio) with an out-of-sample split so it is not just curve-fitted. The replay tool exists now (`python -m bot.replay`, [docs/guides/replay.md](docs/guides/replay.md)); the study itself is not done.
-3. **Accept it as a plumbing test** and treat all real-money use as not ready.
+- The bot's own settings (1h, RSI ≤ 30 within 6 candles, EMA 9, 4% / 2%) lost **−0.59% per trade** on the held-back period (124 trades, 95% range −1.07% to −0.11%), worse than random entries with the same exit (−0.34%).
+- No setting's 95% range was above zero, even on the period used for choosing. Ranking on the first period did not predict the second (rank correlation −0.20).
+- On average the signal did 0.05–0.07% per trade worse than random entries: it loses about the fees.
 
-My recommendation: 1 now, 2 before real money. Nothing in the code should be described as profitable until then.
+Options:
+1. **Keep the testnet running as a plumbing test** (counted from the first deploy after #19) and treat all real-money use as not ready. My recommendation.
+2. **A different entry idea**, put through the same study before any real money.
+
+Nothing in the code should be described as profitable.
 
 ---
 
@@ -91,4 +94,4 @@ Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OC
 ## Build order
 
 5. Notifications: done; delivery verified, trade-alert layout to be seen on a testnet run.
-6. Deployment: built and running on the testnet via Coolify since 2026-10-19; now monitoring for a few days (see the section above). Left: the rest of the Coolify checklist (stop timeout, a hand-over with an open position, backups) and the gate to real money.
+6. Deployment: built and running on the testnet via Coolify since 2026-10-19; now monitoring for a few days (see the section above). Left: the rest of the Coolify checklist (stop timeout, backups) and the gate to real money.

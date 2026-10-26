@@ -49,8 +49,8 @@ Full steps with troubleshooting: [GETTING_STARTED.md, section 7](GETTING_STARTED
 
 ## 4. Decide the entry signal (a blocker for real money)
 
-- [ ] Read the decision at the top of [NEXT_STEPS.md](NEXT_STEPS.md). In a 250-day replay the current RSI + EMA rule won 33% of the time against the 36.7% needed to break even after fees.
-- [ ] Choose: run it on the testnet and in dry-run for a few weeks first (my suggestion), and/or ask for a careful parameter study with an out-of-sample test.
+- [x] The parameter study with an out-of-sample test is done (2026-10-26): no setting of the current RSI + EMA rule has an edge; it loses about the fees per trade ([docs/guides/replay.md](docs/guides/replay.md#the-2026-10-parameter-study)).
+- [ ] Choose (see [NEXT_STEPS.md](NEXT_STEPS.md)): keep it as a plumbing test with no real money (my suggestion), or try a different entry idea through the same study.
 - Without this decision, treat everything as a rehearsal.
 
 ## 5. Stage C: dry-run on real market data (still no orders)
