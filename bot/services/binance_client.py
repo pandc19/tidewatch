@@ -149,6 +149,23 @@ class Fill:
 
 
 @dataclass(frozen=True)
+class Candle:
+    """One kline. Times are Binance's milliseconds since the epoch (UTC)."""
+
+    open_time: int
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    close_time: int
+
+    @classmethod
+    def from_binance(cls, row: list[Any]) -> Candle:
+        return cls(int(row[0]), to_decimal(row[1]), to_decimal(row[2]), to_decimal(row[3]),
+                   to_decimal(row[4]), int(row[6]))
+
+
+@dataclass(frozen=True)
 class BookTicker:
     symbol: str
     bid: Decimal
@@ -263,6 +280,19 @@ class ExchangeClient:
         rows = await self._client.get_klines(symbol=symbol, interval=interval, limit=limit)
         now_ms = int(time.time() * 1000)
         return [to_decimal(r[4]) for r in rows if int(r[6]) < now_ms]  # r[4] close, r[6] close time
+
+    async def candles(
+        self, symbol: str, interval: str, *, start_ms: int, end_ms: int | None = None, limit: int = 1000
+    ) -> list[Candle]:
+        """Up to `limit` candles opening at or after `start_ms`, oldest first (public data).
+
+        Includes the candle still forming when `end_ms` is not given; callers that need only
+        finished candles drop those whose `close_time` is not in the past (the replay does).
+        """
+        kwargs: dict[str, Any] = {"symbol": symbol, "interval": interval, "startTime": start_ms, "limit": limit}
+        if end_ms is not None:
+            kwargs["endTime"] = end_ms
+        return [Candle.from_binance(r) for r in await self._client.get_klines(**kwargs)]
 
     # --- account (signed) ------------------------------------------------------------------
 
