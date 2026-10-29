@@ -345,6 +345,11 @@ class MessageFormatter:
             f"{self._asset(position.symbol)} has its stop-loss in place again."
         )
 
+    def entries_unblocked(self) -> str:
+        return self._head("New entries active again") + _e(
+            "Reconciliation with the exchange is clean again; the bot may open new positions."
+        )
+
     def _symbols_line(self) -> str:
         s = self._s
         if s.symbols_auto:  # the list is chosen after start, so say how, not which
@@ -486,6 +491,9 @@ class NotificationService(EngineObserver):
 
     async def protected_again(self, position) -> None:
         self._emit("protected_again", lambda: self._fmt.protected_again(position))
+
+    async def entries_unblocked(self) -> None:
+        self._emit("entries_unblocked", self._fmt.entries_unblocked)
 
     # -- lifecycle messages
 

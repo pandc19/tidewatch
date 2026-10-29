@@ -80,6 +80,9 @@ class Recorder(EngineObserver):
     async def protected_again(self, position):
         self.events.append(("protected_again", position.symbol))
 
+    async def entries_unblocked(self):
+        self.events.append(("entries_unblocked",))
+
     def kinds(self):
         return [e[0] for e in self.events]
 
@@ -275,8 +278,38 @@ async def test_an_orphan_order_blocks_new_entries_until_it_is_gone(h):
 
     h.fake.open = None
     await h.engine.on_connected()
-    assert h.engine.trading_blocked is None
+    assert h.engine.trading_blocked is None and "entries_unblocked" in h.obs.kinds()
     assert await h.engine.open_position(SIGNAL) is not None
+
+
+async def test_a_failed_read_at_reconnect_is_retried_by_the_tick_until_it_clears(h):
+    """Seen on the testnet: one failed read at 3 am blocked entries for two days, silently."""
+    await h.engine.open_position(SIGNAL)
+    buy = await h.buy()
+    h.fake.fill(buy.binance_order_id, price="120.41")
+    await h.engine.tick()  # filled: the OCO is placed
+    h.fake.raise_on["get_order"] = api_error(-1001, "Internal error; unable to process your request.")
+
+    await h.engine.on_connected()
+    assert h.engine.trading_blocked and h.obs.kinds().count("attention") == 1
+
+    h.clock.advance(minutes=4)
+    await h.engine.tick()  # too soon: not retried
+    h.clock.advance(minutes=1)
+    await h.engine.tick()  # retried, still failing: blocked, no second alert
+    assert h.engine.trading_blocked and h.obs.kinds().count("attention") == 1
+
+    del h.fake.raise_on["get_order"]
+    h.clock.advance(minutes=5)
+    await h.engine.tick()
+    assert h.engine.trading_blocked is None
+    assert h.obs.kinds().count("entries_unblocked") == 1 and h.obs.kinds().count("attention") == 1
+
+
+async def test_a_clean_reconcile_without_a_block_sends_nothing(h):
+    await h.engine.on_connected()
+    await h.engine.on_connected()
+    assert h.engine.trading_blocked is None and h.obs.events == []
 
 
 async def test_events_for_orders_that_are_not_ours_are_ignored(h, caplog):
