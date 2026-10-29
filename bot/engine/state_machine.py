@@ -74,6 +74,9 @@ PRICE_RELATIONSHIP_ERROR = -2010
 TP_BUMP_PCT = Decimal("0.0005")
 # An order with no Binance id after this long is looked up by client id (lost response).
 UNKNOWN_ORDER_GRACE = timedelta(seconds=30)
+# While a failed reconciliation blocks entries, the tick tries it again this often. Without it
+# the block lasted until the next stream reconnect (two days once, after one failed read).
+RECONCILE_RETRY = timedelta(minutes=5)
 
 ALLOWED_TRANSITIONS: dict[PositionStatus, set[PositionStatus]] = {
     PositionStatus.PENDING_ENTRY: {PositionStatus.OPEN, PositionStatus.CANCELLED},
@@ -123,6 +126,7 @@ class EngineObserver:
     async def kill_switch(self, event: KillSwitchEvent) -> None: ...
     async def reminder(self, message: str) -> None: ...
     async def protected_again(self, position: Position) -> None: ...
+    async def entries_unblocked(self) -> None: ...
 
 
 @dataclass
@@ -172,6 +176,7 @@ class TradingEngine:
         )
         # Set when reconciliation finds something it cannot explain; blocks new entries.
         self.trading_blocked: str | None = None
+        self._last_reconcile: datetime | None = None
 
     # ------------------------------------------------------------------ public entry points
 
@@ -187,24 +192,38 @@ class TradingEngine:
             await self._safe(self._check_timeouts(), "checking entry timeouts")
             for position_id in await self._active_position_ids():
                 await self._safe(self._evaluate(position_id), f"evaluating position {position_id}")
+            if self.trading_blocked and self._clock() - self._last_reconcile >= RECONCILE_RETRY:
+                await self._safe(self._reconcile(), "re-checking a blocked reconciliation")
             if not isinstance(self._source, NoEntries):
                 await self._safe(self._maybe_enter(), "looking for an entry")
 
     async def on_connected(self) -> None:
         """After (re)connecting the stream, and at startup: reconcile with the exchange."""
         async with self._lock:
-            async with self._sessions() as session:
-                report = await reconcile(session, self._exchange)
-            if report.errors or report.orphans:
-                self.trading_blocked = (
-                    f"reconciliation: {len(report.errors)} unreadable orders, "
-                    f"{len(report.orphans)} unknown orders on the exchange"
-                )
-                await self._notify_attention(self.trading_blocked)
-            else:
-                self.trading_blocked = None
+            await self._reconcile()
             for position_id in await self._active_position_ids():
                 await self._safe(self._evaluate(position_id), f"evaluating position {position_id}")
+
+    async def _reconcile(self) -> None:
+        """Block new entries while the exchange shows something unexplained. Alerts on a new
+        block and when one clears, not on every retry that still fails."""
+        self._last_reconcile = self._clock()
+        async with self._sessions() as session:
+            report = await reconcile(session, self._exchange)
+        if report.errors or report.orphans:
+            was_blocked = self.trading_blocked is not None
+            self.trading_blocked = (
+                f"reconciliation: {len(report.errors)} unreadable orders, "
+                f"{len(report.orphans)} unknown orders on the exchange"
+            )
+            if was_blocked:
+                log.warning("still blocked: %s", self.trading_blocked)
+            else:
+                await self._notify_attention(self.trading_blocked)
+        elif self.trading_blocked is not None:
+            self.trading_blocked = None
+            log.info("reconciliation clean again: new entries allowed")
+            await self._observer.entries_unblocked()
 
     async def on_stream_event(self, event: OrderEvent) -> None:
         async with self._lock:

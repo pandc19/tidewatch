@@ -86,7 +86,7 @@ def test_every_message_carries_the_mode_and_the_app_name():
         f.exit_placed(position(), order(target_price=D("125.22")), order(stop_price=D("118.00"))),
         f.trade_closed(position(), result()),
         f.kill_switch(_event()),
-        f.attention("look"), f.reminder("still"), f.protected_again(position()),
+        f.attention("look"), f.reminder("still"), f.protected_again(position()), f.entries_unblocked(),
         f.started(), f.stopped(), f.test(),
     ]
     for text in texts:
@@ -147,6 +147,7 @@ def test_attention_reminder_and_protected_again():
     assert "Needs your attention" in f.attention("SOLUSDT has no stop")
     assert "Reminder" in f.reminder("Still unprotected after 15 min.")
     assert "SOL has its stop-loss in place again" in f.protected_again(position())
+    assert "New entries active again" in f.entries_unblocked()
 
 
 def test_entry_cancelled_names_the_reason():
