@@ -7,7 +7,9 @@ it returns `OrderChange`s and the engine acts on them.
 
 The cancel reason is set by whoever cancels on purpose (timeout, kill-switch).
 An order found cancelled with no reason is labelled EXTERNAL, then relabelled
-OCO_COUNTERPART_FILLED if the other leg of its OCO pair filled.
+OCO_COUNTERPART_FILLED if the other leg of its OCO pair filled. A take-profit leg that
+expired while its stop-loss leg is still open is labelled as a triggered stop: Binance expires
+the take-profit when the stop triggers, and the stop then waits as a limit sell.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ log = logging.getLogger(__name__)
 
 LIVE = (OrderStatus.NEW, OrderStatus.PARTIALLY_FILLED)
 CANCELLED = (OrderStatus.CANCELED, OrderStatus.EXPIRED)
+STOP_TRIGGERED_DETAIL = "expired by the exchange: the stop-loss leg of the OCO triggered"
 
 
 @dataclass(frozen=True)
@@ -180,12 +183,24 @@ def _apply_commission(order: Order, fills: list) -> None:
 
 async def _relabel_oco_cancellations(session: AsyncSession, order_list_id: int) -> None:
     legs = (await session.scalars(select(Order).where(Order.order_list_id == order_list_id))).all()
-    if not any(leg.status == OrderStatus.FILLED for leg in legs):
+    if any(leg.status == OrderStatus.FILLED for leg in legs):
+        for leg in legs:
+            if leg.status in CANCELLED and (
+                leg.cancel_reason == CancelReason.EXTERNAL or leg.cancel_detail == STOP_TRIGGERED_DETAIL
+            ):
+                leg.cancel_reason = CancelReason.OCO_COUNTERPART_FILLED
+                leg.cancel_detail = "the other leg of the OCO pair filled"
+    elif any(leg.order_type == OrderType.STOP_LOSS_LIMIT and leg.status in LIVE for leg in legs):
+        for leg in legs:
+            if (
+                leg.order_type == OrderType.LIMIT_MAKER
+                and leg.status == OrderStatus.EXPIRED
+                and leg.cancel_reason == CancelReason.EXTERNAL
+            ):
+                leg.cancel_reason = CancelReason.OTHER
+                leg.cancel_detail = STOP_TRIGGERED_DETAIL
+    else:
         return
-    for leg in legs:
-        if leg.status in CANCELLED and leg.cancel_reason == CancelReason.EXTERNAL:
-            leg.cancel_reason = CancelReason.OCO_COUNTERPART_FILLED
-            leg.cancel_detail = "the other leg of the OCO pair filled"
     await session.flush()
 
 

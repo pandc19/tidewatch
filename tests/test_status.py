@@ -147,7 +147,18 @@ async def test_an_open_position_without_exit_orders_warns():
     line = PositionLine("ETHUSDT", PositionStatus.OPEN, D("1"), D("100"), None, None, None, None, None)
     data = StatusData("TESTNET", "USDT", 5, None, False, None, None, None, None, 0, D(0), 0, D(0), [line])
     text = format_status(data)
-    assert "NONE" in text and "exit orders not live" in text and "no heartbeat yet" in text
+    assert "NONE" in text and "no stop-loss order live" in text and "no heartbeat yet" in text
+
+
+async def test_a_triggered_stop_says_whether_it_can_still_fill():
+    def text(bid):
+        line = PositionLine("BNBUSDT", PositionStatus.OPEN, D("0.020979"), D("740.36"), None, None, D("725.55"),
+                            D(bid), None, D("724.09"))
+        return format_status(StatusData("TESTNET", "USDT", 5, 1.0, True, None, None, None, None, 0, D(0), 0, D(0),
+                                        [line]))
+
+    assert "stop triggered, its limit 724.09 is above the market: not filling" in text("701.45")
+    assert "stop triggered, selling" in text("724.50")
 
 
 async def test_text_is_escaped():

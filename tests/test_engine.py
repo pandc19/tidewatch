@@ -716,6 +716,54 @@ async def test_an_oco_cancelled_by_the_owner_is_flagged_not_silently_replaced(h)
     assert h.obs.kinds().count("attention") == 1  # said once, not every tick
 
 
+async def trigger_the_stop(h, *, bid: str) -> tuple[Order, Order]:
+    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS_LIMIT)
+    h.fake.tickers["SOLUSDT"] = (bid, str(D(bid) + D("0.01")))
+    h.fake.trigger_stop(sl.binance_order_id)
+    await h.engine.on_stream_event(h.event(tp, "EXPIRED"))
+    return tp, sl
+
+
+async def test_a_stop_triggered_past_its_limit_is_flagged_and_not_chased(h):
+    await h.open_and_fill()
+    tp, _ = await trigger_the_stop(h, bid="110.00")  # gapped below the 117.76 limit
+
+    (alert,) = [e[1] for e in h.obs.events if e[0] == "attention"]
+    assert "fell through your stop at 118.00" in alert and "117.76" in alert and "110.00" in alert
+    await h.session.refresh(tp)
+    assert tp.cancel_reason == CancelReason.OTHER and "stop-loss leg of the OCO triggered" in tp.cancel_detail
+    assert (await h.position()).status == PositionStatus.OPEN
+    assert len(h.fake.called("create_oco_order")) == 1 and len(h.fake.called("create_order")) == 1  # no sale
+
+    h.clock.advance(minutes=16)
+    await h.engine.tick()
+    assert h.obs.kinds().count("reminder") == 1 and h.obs.kinds().count("attention") == 1
+
+    h.fake.tickers["SOLUSDT"] = ("117.80", "117.81")  # back above the limit: it can fill now
+    await h.engine.tick()
+    assert "protected_again" not in h.obs.kinds()  # still flagged until the sale goes through
+
+
+async def test_a_triggered_stop_that_can_still_fill_is_not_flagged(h):
+    await h.open_and_fill()
+    await trigger_the_stop(h, bid="117.90")  # between the limit and the trigger
+    await h.engine.tick()
+    assert "attention" not in h.obs.kinds()
+
+
+async def test_a_triggered_stop_that_fills_closes_and_relabels_the_take_profit(h):
+    await h.open_and_fill()
+    tp, sl = await trigger_the_stop(h, bid="110.00")
+
+    h.fake.fill(sl.binance_order_id, price="117.76")
+    await h.engine.on_stream_event(h.event(sl, "FILLED"))
+
+    pos = await h.position()
+    assert pos.status == PositionStatus.CLOSED and pos.exit_reason == ExitReason.STOP_LOSS
+    await h.session.refresh(tp)
+    assert tp.cancel_reason == CancelReason.OCO_COUNTERPART_FILLED
+
+
 # --- leftovers and fees -------------------------------------------------------------------
 
 

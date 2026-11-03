@@ -46,6 +46,7 @@ class PositionLine:
     stop_trigger: Decimal | None
     bid: Decimal | None  # current best bid, for an open position
     since: datetime | None
+    stop_limit: Decimal | None = None  # the limit sell the stop places once triggered
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ async def gather_status(
                     buy_limit=next((o.target_price for o in mine if o.side == OrderSide.BUY), None),
                     take_profit=next((o.target_price for o in mine if o.order_type == OrderType.LIMIT_MAKER), None),
                     stop_trigger=next((o.stop_price for o in mine if o.order_type == OrderType.STOP_LOSS_LIMIT), None),
+                    stop_limit=next((o.target_price for o in mine if o.order_type == OrderType.STOP_LOSS_LIMIT), None),
                     bid=None,
                     since=p.opened_at or p.created_at,
                 )
@@ -238,8 +240,13 @@ def format_status(data: StatusData) -> str:
             if p.bid is not None and p.entry_price:
                 change = (p.bid - p.entry_price) / p.entry_price
                 prow.append(("Best bid now", f"{_num(p.bid)} ({change:+.2%})"))
-            if not p.take_profit or not p.stop_trigger:
-                prow.append(("Warning", "exit orders not live"))
+            if not p.stop_trigger:
+                prow.append(("Warning", "no stop-loss order live"))
+            elif not p.take_profit:  # Binance expired the take-profit: the stop triggered
+                if p.bid is not None and p.stop_limit is not None and p.bid < p.stop_limit:
+                    prow.append(("Warning", f"stop triggered, its limit {_num(p.stop_limit)} is above the market: not filling"))
+                else:
+                    prow.append(("Warning", "stop triggered, selling"))
         if p.since:
             prow.append(("Since", _when(p.since)))
         text += "\n" + _table(prow)

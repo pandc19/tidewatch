@@ -27,9 +27,9 @@ The trading and operations words used in this project, with the meaning they hav
 | **Exit** | The sells that close it: the take-profit and the stop-loss. |
 | **Take-profit (TP)** | A sell placed above the entry to lock in a gain. `TAKE_PROFIT_PCT=4%`. In the database it is the `LIMIT_MAKER` order. |
 | **Stop-loss (SL)** | A sell that triggers if the price falls to a set level, to cap the loss. `STOP_LOSS_PCT=2%`. In the database it is the `STOP_LOSS_LIMIT` order. |
-| **Stop price vs limit price** | The stop price is the trigger. When the market reaches it, a limit order is placed at the lower limit price. The gap is `STOP_LIMIT_OFFSET_PCT=0.2%`, so the sell can still fill if the price keeps dropping. |
+| **Stop price vs limit price** | The stop price is the trigger. When the market reaches it, a limit order is placed at the lower limit price. The gap is `STOP_LIMIT_OFFSET_PCT=0.2%`, so the sell can still fill if the price keeps dropping a little. A gap past both (seen on the testnet, 2026-10-29: BNB fell 17% within an hour) leaves the limit sell above the market, unfilled. |
 | **OCO (one cancels the other)** | The take-profit and stop-loss placed as a pair on Binance. When one fills, Binance cancels the other. Cancelling either one cancels both. Shares an `order_list_id`. |
-| **Protected / unprotected** | A position is protected while its OCO is live on the exchange. If the OCO is gone and the coins are still held, it is unprotected: the bot alerts every `UNPROTECTED_REMINDER_MINUTES=15` and never sells on its own. |
+| **Protected / unprotected** | A position is protected while its OCO is live on the exchange. If the OCO is gone and the coins are still held, it is unprotected. So is a position whose stop triggered but whose limit sell sits above the best bid. Then the bot alerts every `UNPROTECTED_REMINDER_MINUTES=15` and never sells on its own. |
 | **Client order ID** | The label the bot gives each order (`bot-…`, the prefix is `ORDER_ID_PREFIX`). It is how the bot recognises its own orders after a restart. `-tp` and `-sl` mark the two legs. |
 | **Entry timeout** | An unfilled entry buy is cancelled after `ENTRY_TIMEOUT_DAYS=3`. |
 

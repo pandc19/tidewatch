@@ -2,7 +2,7 @@
 
 Pending items only. When something is built or resolved, delete it from this file. What *you* must set up (keys, Telegram, database, server) is in [SETUP_CHECKLIST.md](SETUP_CHECKLIST.md).
 
-Last updated 2026-10-20, during phase 6: the bot runs on the Binance testnet on Coolify (since 2026-10-19) and is being monitored for a few days. Telegram delivery is verified; trade-alert layout is not yet seen.
+Last updated 2026-11-03, during phase 6: the bot runs on the Binance testnet on Coolify (since 2026-10-19) and is being monitored for a few days. Telegram delivery is verified; trade-alert layout is not yet seen.
 
 ---
 
@@ -36,6 +36,17 @@ Options:
 2. **A different entry idea**, put through the same study before any real money.
 
 Nothing in the code should be described as profitable.
+
+---
+
+## Decision needed from the owner: a gap can skip the stop-loss
+
+The stop is a `STOP_LOSS_LIMIT`: when the trigger is hit it places a limit sell 0.2% lower (`STOP_LIMIT_OFFSET_PCT`). On the testnet, 2026-10-29 20:00 UTC, BNB fell from 743 to 613 within an hour. The stop (trigger 725.55, limit 724.09, entry 740.36) triggered, the take-profit expired, and the limit sell never filled because the price never came back above 724. From the fix of 2026-11-03 the bot flags this as unprotected; before, it counted the resting stop as protection and sent no alert.
+
+Options (each changes how the bot sells, so it needs an ADR):
+1. **A market stop leg** (`STOP_LOSS` as the OCO's lower leg): always sells once triggered, at whatever price the market gives. To verify against the current Binance docs and the testnet first; assumed, not checked.
+2. **A wider `STOP_LIMIT_OFFSET_PCT`** (for example 1–2%): fills through small gaps, still skipped by a 17% one.
+3. **Keep the stop-limit**: the owner is alerted and decides by hand (what happens now).
 
 ---
 
