@@ -142,6 +142,16 @@ def test_kill_switch_message_says_everything_the_owner_needs():
     assert "stay protected" in text
 
 
+def test_a_tiny_loss_limit_is_not_rounded_to_zero():
+    """Seen on the testnet, 2026-11-03: a 0.005% limit read "Limit 0.00%"."""
+    event = KillSwitchEvent(
+        realized_loss_usd=D("0.8081"), account_balance_usd=D("9976.56"), loss_pct=D("0.0000810"),
+        limit_pct=D("0.00005"), resume_at=WHEN,
+    )
+    text = fmt().kill_switch(event)
+    assert "0.0050%" in text and "0.0081% of 9,976.56" in text and "0.00%" not in text
+
+
 def test_attention_reminder_and_protected_again():
     f = fmt()
     assert "Needs your attention" in f.attention("SOLUSDT has no stop")

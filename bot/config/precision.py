@@ -55,6 +55,15 @@ def format_decimal(value: Decimal) -> str:
     return "0" if text in ("-0", "") else text
 
 
+def format_pct(fraction: Decimal) -> str:
+    """A fraction as a percentage for people: two decimals, or two significant digits when
+    that would round a non-zero value to 0.00% (a 0.005% loss limit stays visible)."""
+    pct = fraction * 100
+    if pct == 0 or abs(pct) >= Decimal("0.01"):
+        return f"{pct:.2f}%"
+    return f"{pct:.2g}%"
+
+
 @dataclass(frozen=True)
 class PercentPriceBand:
     """Allowed distance from the 5-minute average price, per order side."""

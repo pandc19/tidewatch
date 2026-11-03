@@ -24,6 +24,7 @@ from decimal import Decimal
 
 import aiohttp
 
+from bot.config.precision import format_pct
 from bot.config.settings import APP_NAME, Settings
 from bot.database.models import KillSwitchEvent, Order, Position
 from bot.engine.ledger import TradeResult
@@ -326,8 +327,8 @@ class MessageFormatter:
             + _table(
                 [
                     ("Loss", f"{event.realized_loss_usd:,.4f} {quote}"),
-                    ("Loss / account", f"{event.loss_pct:.2%} of {event.account_balance_usd:,.2f}"),
-                    ("Limit", f"{event.limit_pct:.2%}"),
+                    ("Loss / account", f"{format_pct(event.loss_pct)} of {event.account_balance_usd:,.2f}"),
+                    ("Limit", format_pct(event.limit_pct)),
                     ("Trading resumes", _when(event.resume_at)),
                 ]
             )

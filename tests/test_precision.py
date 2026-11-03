@@ -6,6 +6,7 @@ from bot.config.precision import (
     FilterViolation,
     SymbolFilters,
     format_decimal,
+    format_pct,
     round_price,
     round_quantity,
     to_decimal,
@@ -91,6 +92,14 @@ def test_decimal_has_no_float_error():
 
 def test_zero_step_means_filter_disabled():
     assert round_quantity(D("1.23456"), D("0")) == D("1.23456")
+
+
+def test_format_pct_keeps_a_tiny_value_visible():
+    assert format_pct(D("0.02")) == "2.00%"
+    assert format_pct(D("0.075")) == "7.50%"
+    assert format_pct(D("0")) == "0.00%"
+    assert format_pct(D("0.00005")) == "0.0050%"  # would be 0.00% with two decimals
+    assert format_pct(D("-0.0000810")) == "-0.0081%"
 
 
 def test_format_decimal_is_plain_text():
