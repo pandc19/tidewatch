@@ -180,6 +180,11 @@ class FakeBinance:
         else:
             o["status"] = "CANCELED"
 
+    def trigger_stop(self, order_id: int) -> None:
+        """The stop leg's trigger is hit: Binance expires the take-profit, the stop stays NEW."""
+        o = self.orders[order_id]
+        self._cancel_list(o["orderListId"], except_id=order_id, status="EXPIRED")
+
     def _cancel_list(self, list_id: int, *, status: str = "CANCELED", except_id: int | None = None) -> None:
         for oid, o in self.orders.items():
             if o["orderListId"] == list_id and oid != except_id and o["status"] in ("NEW", "PARTIALLY_FILLED"):

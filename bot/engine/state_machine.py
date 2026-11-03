@@ -415,6 +415,12 @@ class TradingEngine:
             await self._close(position_id, filled.id)
             return
         if live:
+            stop = next((o for o in live if o.order_type == OrderType.STOP_LOSS_LIMIT), None)
+            if stop is not None and not any(o.order_type == OrderType.LIMIT_MAKER for o in live):
+                # The take-profit is gone, so the stop triggered and now waits as a limit sell.
+                await self._check_triggered_stop(position_id, symbol, stop.stop_price, stop.target_price, stop.quantity)
+                await self._remind_unprotected(position_id)
+                return
             await self._clear_unprotected(position_id)  # protected (again): say so if we had warned
             return
         if await self._detect_manual_sale(position_id):
@@ -432,6 +438,31 @@ class TradingEngine:
                 f"You still hold {held:f} {symbol.removesuffix(self._settings.quote_asset)} with no stop-loss.",
             )
         await self._remind_unprotected(position_id)
+
+    async def _check_triggered_stop(self, position_id, symbol, trigger, limit, quantity) -> None:
+        """Flag a triggered stop whose limit sell is above the market: it cannot fill.
+
+        A price that falls through the trigger and the limit at once (a gap) leaves the limit
+        sell resting above the market. The bot does not chase it lower; the owner decides.
+        Once flagged it stays flagged until the position closes, so a price hovering at the
+        limit does not alternate between alerts.
+        """
+        try:
+            bid = (await self._exchange.book_ticker(symbol)).bid
+        except ExchangeError:
+            log.exception("could not read the price of %s to check its triggered stop", symbol)
+            return
+        if bid >= limit:
+            return
+        asset = symbol.removesuffix(self._settings.quote_asset)
+        await self._flag_unprotected(
+            position_id,
+            "stop-skipped",
+            f"{symbol}: the price fell through your stop at {trigger} and is now {bid}, below the stop's "
+            f"limit sell at {limit}, so it cannot fill. You hold {quantity:f} {asset} with no working "
+            "stop-loss. The bot will not sell lower on its own: sell it yourself, or leave the order "
+            "in case the price comes back.",
+        )
 
     async def _detect_manual_sale(self, position_id) -> bool:
         """True if the owner sold this position by hand, in which case it has been closed.
