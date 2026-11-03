@@ -15,6 +15,7 @@ An ADR records a significant technical decision: the context, the decision, and 
 | [007](007-telegram-alerts-are-queued.md) | Telegram alerts are queued, sent as HTML, and never carry the token | Accepted |
 | [008](008-read-only-telegram-commands.md) | Telegram commands are read-only, owner-only, and opt-in | Accepted |
 | [009](009-dynamic-symbol-list.md) | An optional dynamic symbol list, tiered by risk, off by default | Accepted |
+| [010](010-market-stop-loss.md) | The stop-loss leg is a market stop | Accepted |
 
 ## Template
 

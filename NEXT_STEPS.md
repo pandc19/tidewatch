@@ -39,22 +39,12 @@ Nothing in the code should be described as profitable.
 
 ---
 
-## Decision needed from the owner: a gap can skip the stop-loss
-
-The stop is a `STOP_LOSS_LIMIT`: when the trigger is hit it places a limit sell 0.2% lower (`STOP_LIMIT_OFFSET_PCT`). On the testnet, 2026-10-29 20:00 UTC, BNB fell from 743 to 613 within an hour. The stop (trigger 725.55, limit 724.09, entry 740.36) triggered, the take-profit expired, and the limit sell never filled because the price never came back above 724. From the fix of 2026-11-03 the bot flags this as unprotected; before, it counted the resting stop as protection and sent no alert.
-
-Options (each changes how the bot sells, so it needs an ADR):
-1. **A market stop leg** (`STOP_LOSS` as the OCO's lower leg): always sells once triggered, at whatever price the market gives. To verify against the current Binance docs and the testnet first; assumed, not checked.
-2. **A wider `STOP_LIMIT_OFFSET_PCT`** (for example 1–2%): fills through small gaps, still skipped by a 17% one.
-3. **Keep the stop-limit**: the owner is alerted and decides by hand (what happens now).
-
----
-
 ## Still unverified (testnet limits)
 
 Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OCO, owner cancel, entry timeout), and an owner cancelling the OCO and selling by hand (closed as `MANUAL` within a second, exact PnL). Not yet seen, and hard to force on a testnet:
 
 - **The kill-switch with real losing trades.** Tested against the real database with fabricated losses only.
+- **The market stop-loss** (ADR-010, 2026-11-03): `STOP_LOSS` as the OCO's lower leg is in Binance's docs and allowed for BNB, SOL and BTC in live `exchangeInfo`, but no such OCO has been placed yet. On the first testnet exit after the deploy, check that Binance accepts it (a refusal shows as an "unprotected" alert) and, when it triggers, that it fills at once and the take-profit ends `EXPIRED`. The BNB position opened 2026-10-27 keeps its old `STOP_LOSS_LIMIT` until it closes or you sell it.
 - **The re-based emergency stop** on the live exchange (needs a price that fell through the stop). Tested against a fake that raises Binance's refusal.
 - **An OCO leg actually filling** live: the counterpart's real status (`CANCELED` or `EXPIRED`) is tested against a fake only. Both are handled.
 - **Fee math.** The testnet's commission rates read 0 until you set them to 0.1% maker and taker on 2026-10-19 and the fills charge it: a 2026-10-21 trade paid 0.1% in the coin bought on the buy (0.0000114 of 0.0114 SNDKB) and 0.1% in USDT on the sell. Still unseen: the real mainnet rate (0.1% per side is assumed).

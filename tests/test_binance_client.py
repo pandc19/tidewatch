@@ -144,7 +144,6 @@ OCO = {
     "quantity": D("0.129"),
     "take_profit_price": D("125.22"),
     "stop_price": D("118.00"),
-    "stop_limit_price": D("117.76"),
 }
 
 
@@ -154,10 +153,10 @@ async def test_oco_uses_the_new_endpoint_parameters():
     (sent,) = fake.called("create_oco_order")
     assert sent["side"] == "SELL" and sent["quantity"] == "0.129"
     assert (sent["aboveType"], sent["abovePrice"]) == ("LIMIT_MAKER", "125.22")
-    assert (sent["belowType"], sent["belowStopPrice"], sent["belowPrice"]) == ("STOP_LOSS_LIMIT", "118", "117.76")
-    assert sent["belowTimeInForce"] == "GTC"
+    assert (sent["belowType"], sent["belowStopPrice"]) == ("STOP_LOSS", "118")  # a market stop (ADR-010)
+    assert "belowPrice" not in sent and "belowTimeInForce" not in sent
     assert res.order_list_id == 55
-    assert res.take_profit.order_type == "LIMIT_MAKER" and res.stop_loss.order_type == "STOP_LOSS_LIMIT"
+    assert res.take_profit.order_type == "LIMIT_MAKER" and res.stop_loss.order_type == "STOP_LOSS"
     assert res.take_profit.order_list_id == res.stop_loss.order_list_id == 55
 
 
@@ -183,14 +182,13 @@ async def test_dry_run_oco_is_not_sent_and_has_two_legs():
     res = await ex.place_oco_sell("SOLUSDT", **OCO)
     assert fake.called("create_oco_order") == []
     assert res.order_list_id is None
-    assert res.stop_loss.stop_price == D("118.00") and res.stop_loss.price == D("117.76")
+    assert res.stop_loss.stop_price == D("118.00") and res.stop_loss.order_type == "STOP_LOSS"
 
 
 @pytest.mark.parametrize(
     "override",
     [
         {"stop_price": D("126")},  # stop above the take-profit
-        {"stop_limit_price": D("119")},  # limit above its own trigger
         {"quantity": D("0.040")},  # under the minimum order value
         {"stop_price": D("118.005")},  # off the tick grid
     ],

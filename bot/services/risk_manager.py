@@ -39,13 +39,12 @@ def size_entry(
     filters: SymbolFilters,
     *,
     stop_loss_pct: Decimal,
-    stop_limit_offset_pct: Decimal,
 ) -> Decimal | None:
     """Quantity to buy with `allocation_pct` of the free quote balance, or None.
 
     None means no valid trade fits: the quantity rounds below Binance's minimum, or the
     position could not be *protected*. The stop-loss leg sells a little less (after the
-    fee) at a lower price, so its value must still reach the minimum order value;
+    fee) at the stop price, so its value must still reach the minimum order value;
     otherwise the OCO would be refused and the coins left unprotected.
     """
     if free_quote <= 0 or price <= 0:
@@ -55,10 +54,8 @@ def size_entry(
         return None
 
     worst_case_sellable = filters.round_quantity(quantity * (1 - FEE_BUFFER))
-    stop_limit_price = filters.round_price(
-        price * (1 - stop_loss_pct) * (1 - stop_limit_offset_pct)
-    )
-    if worst_case_sellable < filters.min_qty or worst_case_sellable * stop_limit_price < filters.min_notional:
+    stop_price = filters.round_price(price * (1 - stop_loss_pct))
+    if worst_case_sellable < filters.min_qty or worst_case_sellable * stop_price < filters.min_notional:
         return None
     return quantity
 
@@ -126,7 +123,7 @@ def config_problems(
             s for s in settings.symbols
             if size_entry(
                 free_quote, settings.allocation_pct, prices[s], filters[s],
-                stop_loss_pct=settings.stop_loss_pct, stop_limit_offset_pct=settings.stop_limit_offset_pct,
+                stop_loss_pct=settings.stop_loss_pct,
             ) is not None
         ]
         for symbol in settings.symbols:

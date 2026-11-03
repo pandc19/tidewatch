@@ -12,7 +12,7 @@ The original spec had `orders`, `tax_ledger` and `daily_pnl`. That cannot repres
 ## Decision
 - `positions`: one row per trade (`PENDING_ENTRY → OPEN → CLOSED`, or `CANCELLED`). A partial unique index allows one live position per symbol.
 - `orders`: every order, with `position_id`, our `client_order_id` (unique), nullable unique `binance_order_id` (null in dry-run), `order_list_id` for OCO legs, fill price/quantity, commission, and a stored `cancel_reason` (`ENTRY_TIMEOUT`, `KILL_SWITCH`, `OCO_COUNTERPART_FILLED`, `EXTERNAL`, `OTHER`). A CHECK allows a reason only on cancelled or expired orders.
-- OCO legs use order types `LIMIT_MAKER` (take-profit) and `STOP_LOSS_LIMIT`, the types Binance reports, instead of a single `OCO` value.
+- OCO legs use order types `LIMIT_MAKER` (take-profit) and `STOP_LOSS_LIMIT`, the types Binance reports, instead of a single `OCO` value (*Update 2026-11-03:* the stop-loss leg is now `STOP_LOSS`, a market stop, ADR-010; `STOP_LOSS_LIMIT` remains for older rows).
 - `kill_switch_events`: why a trip happened; orders it cancelled reference it.
 - `bot_state`: a single row (CHECK `id = 1`) holding the pause, seeded by the migration.
 - `tax_ledger` gains `position_id` (unique) and `fees_usd`. `daily_pnl` stays a per-UTC-day summary; the kill-switch itself uses a rolling 24-hour sum of closed positions.

@@ -17,7 +17,7 @@ def sol() -> SymbolFilters:
     return SymbolFilters.from_symbol_info(SOL_INFO)
 
 
-KW = {"stop_loss_pct": D("0.02"), "stop_limit_offset_pct": D("0.002")}
+KW = {"stop_loss_pct": D("0.02")}
 
 
 # --- sizing -------------------------------------------------------------------------------
