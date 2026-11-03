@@ -90,6 +90,11 @@ class IllegalTransition(RuntimeError):
     pass
 
 
+def _n(value: Decimal) -> str:
+    """A price or quantity for a message: no trailing zeros (database NUMERIC keeps 18) or exponent."""
+    return format(value.normalize(), "f")
+
+
 def transition(position: Position, new_status: PositionStatus) -> None:
     if new_status not in ALLOWED_TRANSITIONS[position.status]:
         raise IllegalTransition(f"{position.symbol}: {position.status.value} -> {new_status.value}")
@@ -435,7 +440,7 @@ class TradingEngine:
                 position_id,
                 "exits-cancelled",
                 f"{symbol}: your sell orders were cancelled outside the bot. "
-                f"You still hold {held:f} {symbol.removesuffix(self._settings.quote_asset)} with no stop-loss.",
+                f"You still hold {_n(held)} {symbol.removesuffix(self._settings.quote_asset)} with no stop-loss.",
             )
         await self._remind_unprotected(position_id)
 
@@ -458,8 +463,8 @@ class TradingEngine:
         await self._flag_unprotected(
             position_id,
             "stop-skipped",
-            f"{symbol}: the price fell through your stop at {trigger} and is now {bid}, below the stop's "
-            f"limit sell at {limit}, so it cannot fill. You hold {quantity:f} {asset} with no working "
+            f"{symbol}: the price fell through your stop at {_n(trigger)} and is now {_n(bid)}, below the stop's "
+            f"limit sell at {_n(limit)}, so it cannot fill. You hold {_n(quantity)} {asset} with no working "
             "stop-loss. The bot will not sell lower on its own: sell it yourself, or leave the order "
             "in case the price comes back.",
         )
@@ -491,7 +496,7 @@ class TradingEngine:
             await self._flag_unprotected(
                 position_id,
                 "partial-manual-sale",
-                f"{symbol}: you sold {sold} of the {held} the bot holds. Partial manual sales are not "
+                f"{symbol}: you sold {_n(sold)} of the {_n(held)} the bot holds. Partial manual sales are not "
                 "handled automatically: the rest has no stop-loss, so sell or protect it yourself.",
             )
             return False
@@ -556,7 +561,7 @@ class TradingEngine:
             await self._flag_unprotected(
                 position_id,
                 "nothing-to-sell",
-                f"{symbol}: the bot holds a position but the free balance covers only {quantity}, "
+                f"{symbol}: the bot holds a position but the free balance covers only {_n(quantity)}, "
                 "so no stop-loss can be placed. Check your balance.",
             )
             return
@@ -644,8 +649,8 @@ class TradingEngine:
             new_stop, market = rebased_stop
             await self._attention_once(
                 f"{position_id}:stop-rebased",
-                f"{symbol}: the price fell to {market}, already past your stop at {planned_stop}. "
-                f"A protective stop was placed at {new_stop} instead, so the loss from your entry at {entry} "
+                f"{symbol}: the price fell to {_n(market)}, already past your stop at {_n(planned_stop)}. "
+                f"A protective stop was placed at {_n(new_stop)} instead, so the loss from your entry at {_n(entry)} "
                 f"is now capped near {(entry - new_stop) / entry:.1%}. Sell or cancel it yourself if you prefer",
             )
         await self._observer.exit_placed(
@@ -684,7 +689,7 @@ class TradingEngine:
             position_id,
             "exit-refused",
             f"{symbol}: Binance refused the sell orders ({detail}). "
-            f"You hold {quantity:f} {symbol.removesuffix(self._settings.quote_asset)} with no stop-loss. "
+            f"You hold {_n(quantity)} {symbol.removesuffix(self._settings.quote_asset)} with no stop-loss. "
             f"Retrying every {self._settings.exit_retry_seconds}s.",
         )
 
