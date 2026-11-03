@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.config.precision import SymbolFilters
+from bot.config.precision import SymbolFilters, format_pct
 from bot.config.settings import Settings
 from bot.database.models import (
     BotState,
@@ -210,8 +210,8 @@ class KillSwitch:
 
         resume_at = now + timedelta(hours=self._s.kill_switch_cooldown_hours)
         reason = (
-            f"daily loss limit: lost {loss:.4f} ({loss_pct:.2%} of {equity:.2f}) "
-            f"against a {self._s.daily_loss_limit_pct:.2%} limit"
+            f"daily loss limit: lost {loss:.4f} ({format_pct(loss_pct)} of {equity:.2f}) "
+            f"against a {format_pct(self._s.daily_loss_limit_pct)} limit"
         )
         async with self._sessions() as session:
             event = KillSwitchEvent(

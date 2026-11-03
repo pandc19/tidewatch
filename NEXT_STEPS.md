@@ -41,9 +41,8 @@ Nothing in the code should be described as profitable.
 
 ## Still unverified (testnet limits)
 
-Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OCO, owner cancel, entry timeout), and an owner cancelling the OCO and selling by hand (closed as `MANUAL` within a second, exact PnL). Not yet seen, and hard to force on a testnet:
+Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OCO, owner cancel, entry timeout), and an owner cancelling the OCO and selling by hand (closed as `MANUAL` within a second, exact PnL). Again on 2026-11-03 on Coolify: the BNB stop-limit skipped by a gap was cancelled and 0.020 BNB sold at market through the API; the bot closed the position as `MANUAL` at 701.40 (−0.8081 USD, matching the fills) and the **kill-switch tripped on that real loss** (0.0081% of the account against the rehearsal's 0.005% limit), pausing entries for 24 hours. Not yet seen, and hard to force on a testnet:
 
-- **The kill-switch with real losing trades.** Tested against the real database with fabricated losses only.
 - **The market stop-loss** (ADR-010, 2026-11-03): `STOP_LOSS` as the OCO's lower leg is in Binance's docs and allowed for BNB, SOL and BTC in live `exchangeInfo`, but no such OCO has been placed yet. On the first testnet exit after the deploy, check that Binance accepts it (a refusal shows as an "unprotected" alert) and, when it triggers, that it fills at once and the take-profit ends `EXPIRED`. The BNB position opened 2026-10-27 keeps its old `STOP_LOSS_LIMIT` until it closes or you sell it.
 - **The re-based emergency stop** on the live exchange (needs a price that fell through the stop). Tested against a fake that raises Binance's refusal.
 - **An OCO leg actually filling** live: the counterpart's real status (`CANCELED` or `EXPIRED`) is tested against a fake only. Both are handled.
