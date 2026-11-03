@@ -905,9 +905,10 @@ class TradingEngine:
         if state is None or minutes == 0 or now - state.last_notice < timedelta(minutes=minutes):
             return
         state.last_notice = now
-        waited = int((now - state.since).total_seconds() // 60)
-        log.critical("STILL UNPROTECTED after %d min: %s", waited, state.message)
-        await self._observer.reminder(f"Still unprotected after {waited} min. {state.message}")
+        minutes_waited = int((now - state.since).total_seconds() // 60)
+        waited = f"{minutes_waited} min" if minutes_waited < 120 else f"{minutes_waited // 60} h"
+        log.critical("STILL UNPROTECTED after %s: %s", waited, state.message)
+        await self._observer.reminder(f"Still unprotected after {waited}. {state.message}")
 
     async def _clear_unprotected(self, position_id) -> None:
         if self._unprotected.pop(position_id, None) is not None:

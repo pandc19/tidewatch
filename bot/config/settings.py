@@ -117,7 +117,7 @@ class Settings(BaseSettings):
 
     # Notifications
     # While a position has no stop-loss, repeat the alert this often (0 = alert once only).
-    unprotected_reminder_minutes: int = Field(default=15, ge=0)
+    unprotected_reminder_minutes: int = Field(default=1440, ge=0)
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
     # Answer read-only commands (/status) from that chat. Off by default: only one process can poll

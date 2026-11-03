@@ -604,24 +604,34 @@ async def test_trade_history_is_not_even_fetched_while_the_exits_are_live(h):
 # --- reminders while unprotected -----------------------------------------------------------
 
 
-async def test_an_unprotected_position_is_reminded_at_the_interval_and_not_before(h):
+async def test_an_unprotected_position_is_reminded_once_a_day_and_not_before(h):
     await h.open_and_fill()
     await cancel_exits_in_the_app(h)
     assert h.obs.kinds().count("attention") == 1 and "reminder" not in h.obs.kinds()
 
-    h.clock.advance(minutes=14)
+    h.clock.advance(hours=23, minutes=59)
     await h.engine.tick()
     assert "reminder" not in h.obs.kinds()  # not yet
 
     h.clock.advance(minutes=1, seconds=1)
     await h.engine.tick()
     (first,) = [e[1] for e in h.obs.events if e[0] == "reminder"]
-    assert "Still unprotected after 15 min" in first and "no stop-loss" in first
+    assert "Still unprotected after 24 h" in first and "no stop-loss" in first
 
-    h.clock.advance(minutes=15)
+    h.clock.advance(hours=24)
     await h.engine.tick()
     assert h.obs.kinds().count("reminder") == 2  # and again, one interval later
     assert h.obs.kinds().count("attention") == 1  # the original alert is not repeated
+
+
+async def test_the_reminder_interval_is_a_setting(session):
+    h = build(session, UNPROTECTED_REMINDER_MINUTES="15")
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+    h.clock.advance(minutes=15, seconds=1)
+    await h.engine.tick()
+    (first,) = [e[1] for e in h.obs.events if e[0] == "reminder"]
+    assert "Still unprotected after 15 min." in first
 
 
 async def test_reminders_can_be_switched_off(session):
@@ -645,7 +655,7 @@ async def test_reminders_continue_through_the_retry_throttle_and_stop_when_prote
     await h.open_and_fill()
     assert h.obs.kinds().count("attention") == 1
 
-    h.clock.advance(minutes=16)  # the exit retry is throttled to 2 minutes, but the reminder is due
+    h.clock.advance(hours=24, minutes=1)  # the exit retry is throttled to 2 minutes, but the reminder is due
     await h.engine.tick()
     assert h.obs.kinds().count("reminder") == 1
 
@@ -653,7 +663,7 @@ async def test_reminders_continue_through_the_retry_throttle_and_stop_when_prote
     h.clock.advance(seconds=121)  # past the retry throttle
     await h.engine.tick()  # the next retry succeeds: protection is back
     assert h.obs.kinds().count("protected_again") == 1
-    h.clock.advance(minutes=30)
+    h.clock.advance(hours=48)
     await h.engine.tick()
     assert h.obs.kinds().count("reminder") == 1  # no more once protected
 
@@ -747,7 +757,7 @@ async def test_a_stop_triggered_past_its_limit_is_flagged_and_not_chased(h):
     assert (await h.position()).status == PositionStatus.OPEN
     assert len(h.fake.called("create_oco_order")) == 1 and len(h.fake.called("create_order")) == 1  # no sale
 
-    h.clock.advance(minutes=16)
+    h.clock.advance(hours=24, minutes=1)
     await h.engine.tick()
     assert h.obs.kinds().count("reminder") == 1 and h.obs.kinds().count("attention") == 1
 

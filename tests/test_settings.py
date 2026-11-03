@@ -200,7 +200,7 @@ def test_out_of_range_signal_settings_are_rejected(field, value):
 
 
 def test_unprotected_reminder_setting():
-    assert make().unprotected_reminder_minutes == 15
+    assert make().unprotected_reminder_minutes == 1440  # once a day
     assert make(UNPROTECTED_REMINDER_MINUTES="0").unprotected_reminder_minutes == 0  # 0 = alert once only
     with pytest.raises(ValidationError):
         make(UNPROTECTED_REMINDER_MINUTES="-1")
