@@ -58,7 +58,7 @@ async def open_position(session):
     for kind, side, target, stop in [
         (OrderType.LIMIT, OrderSide.BUY, D("2424.95"), None),
         (OrderType.LIMIT_MAKER, OrderSide.SELL, D("2522"), None),
-        (OrderType.STOP_LOSS_LIMIT, OrderSide.SELL, D("2375"), D("2376.4")),
+        (OrderType.STOP_LOSS, OrderSide.SELL, D("2376.4"), D("2376.4")),
     ]:
         done = kind == OrderType.LIMIT
         session.add(Order(position_id=pos.id, symbol="ETHUSDT", client_order_id=f"bot-x-{kind.value}", side=side,

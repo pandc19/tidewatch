@@ -64,7 +64,11 @@ class OrderSide(enum.StrEnum):
 class OrderType(enum.StrEnum):
     LIMIT = "LIMIT"  # entry buy
     LIMIT_MAKER = "LIMIT_MAKER"  # OCO take-profit leg
-    STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"  # OCO stop-loss leg
+    STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"  # OCO stop-loss leg placed before ADR-010 (limit sell once triggered)
+    STOP_LOSS = "STOP_LOSS"  # OCO stop-loss leg: a market sell once triggered (ADR-010)
+
+
+STOP_LOSS_TYPES = (OrderType.STOP_LOSS, OrderType.STOP_LOSS_LIMIT)
 
 
 class OrderStatus(enum.StrEnum):

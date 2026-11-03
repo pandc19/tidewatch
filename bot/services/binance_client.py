@@ -358,19 +358,18 @@ class ExchangeClient:
         quantity: Decimal,
         take_profit_price: Decimal,
         stop_price: Decimal,
-        stop_limit_price: Decimal,
         list_client_order_id: str | None = None,
     ) -> OcoResult:
-        """Take-profit limit above, stop-loss-limit below, sharing one quantity.
+        """Take-profit limit above, market stop-loss below, sharing one quantity.
 
         Uses `POST /api/v3/orderList/oco` (the old `/order/oco` is deprecated).
         The take-profit is a LIMIT_MAKER: Binance rejects it if it would fill
         immediately, i.e. when the market is already at or above the target.
+        The stop-loss is a STOP_LOSS: once triggered it sells at market (ADR-010).
         """
-        if not stop_limit_price <= stop_price < take_profit_price:
+        if not stop_price < take_profit_price:
             raise ExchangeError(
-                "OCO prices must satisfy stop_limit <= stop < take_profit "
-                f"(got {stop_limit_price} / {stop_price} / {take_profit_price})"
+                f"OCO prices must satisfy stop < take_profit (got {stop_price} / {take_profit_price})"
             )
         base = list_client_order_id or self.new_client_order_id(reserve=OCO_SUFFIX_LEN)
         if len(base) + OCO_SUFFIX_LEN > MAX_CLIENT_ID_LEN:
@@ -380,24 +379,20 @@ class ExchangeClient:
         filters = await self.symbol_filters(symbol)
         avg = await self.avg_price(symbol)
         problems = filters.violations("SELL", take_profit_price, quantity, avg)
-        problems += filters.violations("SELL", stop_limit_price, quantity, avg)
-        if (stop_price - filters.min_price) % filters.tick_size != ZERO:
-            problems.append(f"PRICE_FILTER: stop price {stop_price} not a multiple of tick")
+        problems += filters.violations("SELL", stop_price, quantity, avg)  # what the stop sells near
         if problems:
             raise FilterViolation(problems)
 
         if self.dry_run:
             log.info(
-                "DRY_RUN oco %s %s tp=%s stop=%s/%s (%s): not sent",
-                symbol, quantity, take_profit_price, stop_price, stop_limit_price, base,
+                "DRY_RUN oco %s %s tp=%s stop=%s (%s): not sent",
+                symbol, quantity, take_profit_price, stop_price, base,
             )
             return OcoResult(
                 None,
                 base,
                 self._synthetic(symbol, tp_id, "SELL", "LIMIT_MAKER", take_profit_price, None, quantity),
-                self._synthetic(
-                    symbol, sl_id, "SELL", "STOP_LOSS_LIMIT", stop_limit_price, stop_price, quantity
-                ),
+                self._synthetic(symbol, sl_id, "SELL", "STOP_LOSS", stop_price, stop_price, quantity),
             )
 
         self._need_credentials()
@@ -410,10 +405,8 @@ class ExchangeClient:
                 aboveType="LIMIT_MAKER",
                 abovePrice=format_decimal(take_profit_price),
                 aboveClientOrderId=tp_id,
-                belowType="STOP_LOSS_LIMIT",
+                belowType="STOP_LOSS",
                 belowStopPrice=format_decimal(stop_price),
-                belowPrice=format_decimal(stop_limit_price),
-                belowTimeInForce="GTC",
                 belowClientOrderId=sl_id,
                 newOrderRespType="RESULT",
             )

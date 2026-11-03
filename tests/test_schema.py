@@ -129,6 +129,27 @@ async def test_unknown_status_rejected_by_the_database(session):
         )
 
 
+@pytest.mark.parametrize("order_type", list(OrderType))
+async def test_every_order_type_is_accepted_by_the_database(session, order_type):
+    session.add(order(position(), side=OrderSide.SELL, order_type=order_type, stop_price=D("118")))
+    await session.flush()  # STOP_LOSS needs migration 0004
+
+
+async def test_unknown_order_type_rejected_by_the_database(session):
+    pos = position()
+    session.add(pos)
+    await session.flush()
+    with pytest.raises(DBAPIError, match="ck_orders_order_type"):
+        await session.execute(
+            text(
+                "INSERT INTO orders (position_id, symbol, client_order_id, side, order_type,"
+                " status, target_price, quantity)"
+                " VALUES (:p, 'SOLUSDT', 'x', 'SELL', 'TAKE_PROFIT', 'NEW', 1, 1)"
+            ),
+            {"p": pos.id},
+        )
+
+
 async def test_numbers_round_trip_as_exact_decimals(session):
     pos = position()
     o = order(pos, target_price=D("0.00001234"), quantity=D("26.9"))

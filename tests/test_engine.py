@@ -170,8 +170,10 @@ async def test_a_filled_buy_opens_the_position_and_places_the_oco(h):
     assert pos.status == PositionStatus.OPEN
     assert pos.quantity == D("0.12987")  # 0.130 minus the 0.1% fee taken in SOL
     assert pos.entry_price == D("120.41")
-    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS_LIMIT)
-    assert (tp.target_price, sl.stop_price, sl.target_price) == (D("125.22"), D("118.00"), D("117.76"))
+    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS)
+    assert (tp.target_price, sl.stop_price, sl.target_price) == (D("125.22"), D("118.00"), D("118.00"))
+    sent = h.fake.called("create_oco_order")[0]
+    assert sent["belowType"] == "STOP_LOSS" and "belowPrice" not in sent  # a market stop (ADR-010)
     assert tp.quantity == sl.quantity == D("0.129")  # rounded down to the step; the crumb stays
     assert tp.order_list_id == sl.order_list_id is not None
     assert tp.binance_order_id and sl.binance_order_id
@@ -180,7 +182,7 @@ async def test_a_filled_buy_opens_the_position_and_places_the_oco(h):
 
 async def test_take_profit_closes_the_trade_and_writes_the_ledger(h):
     await h.open_and_fill()
-    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS_LIMIT)
+    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS)
 
     h.fake.fill(tp.binance_order_id, price="125.22")
     await h.engine.on_stream_event(h.event(tp, "FILLED"))
@@ -211,7 +213,7 @@ async def test_take_profit_closes_the_trade_and_writes_the_ledger(h):
 
 async def test_stop_loss_closes_at_a_loss(h):
     await h.open_and_fill()
-    sl = await h.leg(OrderType.STOP_LOSS_LIMIT)
+    sl = await h.leg(OrderType.STOP_LOSS)
 
     h.fake.fill(sl.binance_order_id, price="117.90")
     await h.engine.on_stream_event(h.event(sl, "FILLED"))
@@ -442,7 +444,7 @@ async def test_a_lost_answer_to_the_exit_that_did_reach_binance_is_adopted_not_d
     for row, oid in ((tp, 2001), (sl, 2002)):
         h.fake.orders[oid] = order_dict(oid, row.client_order_id, side="SELL", price=str(row.target_price),
                                         qty=str(row.quantity), list_id=77,
-                                        type_="LIMIT_MAKER" if row is tp else "STOP_LOSS_LIMIT")
+                                        type_="LIMIT_MAKER" if row is tp else "STOP_LOSS")
     h.clock.advance(hours=1)
     await h.engine.tick()
 
@@ -504,9 +506,9 @@ async def test_a_stop_the_price_already_fell_past_is_replaced_by_an_emergency_st
     h.fake.bid = "116.00000000"  # fell through the planned 118.00 stop before the OCO could be placed
     await h.open_and_fill()
 
-    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS_LIMIT)
+    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS)
     assert tp.target_price == D("125.22")  # the take-profit is untouched
-    assert (sl.stop_price, sl.target_price) == (D("113.68"), D("113.45"))  # 2% below the CURRENT bid
+    assert (sl.stop_price, sl.target_price) == (D("113.68"), D("113.68"))  # 2% below the CURRENT bid
     assert len(h.fake.called("create_oco_order")) == 2
     assert h.fake.called("create_oco_order")[-1]["belowStopPrice"] == "113.68"
     assert sl.status == OrderStatus.NEW
@@ -517,7 +519,7 @@ async def test_a_stop_the_price_already_fell_past_is_replaced_by_an_emergency_st
 
 async def test_a_normal_stop_never_triggers_the_emergency_path(h):
     await h.open_and_fill()
-    assert (await h.leg(OrderType.STOP_LOSS_LIMIT)).stop_price == D("118.00")
+    assert (await h.leg(OrderType.STOP_LOSS)).stop_price == D("118.00")
     assert "attention" not in h.obs.kinds()
 
 
@@ -602,24 +604,34 @@ async def test_trade_history_is_not_even_fetched_while_the_exits_are_live(h):
 # --- reminders while unprotected -----------------------------------------------------------
 
 
-async def test_an_unprotected_position_is_reminded_at_the_interval_and_not_before(h):
+async def test_an_unprotected_position_is_reminded_once_a_day_and_not_before(h):
     await h.open_and_fill()
     await cancel_exits_in_the_app(h)
     assert h.obs.kinds().count("attention") == 1 and "reminder" not in h.obs.kinds()
 
-    h.clock.advance(minutes=14)
+    h.clock.advance(hours=23, minutes=59)
     await h.engine.tick()
     assert "reminder" not in h.obs.kinds()  # not yet
 
     h.clock.advance(minutes=1, seconds=1)
     await h.engine.tick()
     (first,) = [e[1] for e in h.obs.events if e[0] == "reminder"]
-    assert "Still unprotected after 15 min" in first and "no stop-loss" in first
+    assert "Still unprotected after 24 h" in first and "no stop-loss" in first
 
-    h.clock.advance(minutes=15)
+    h.clock.advance(hours=24)
     await h.engine.tick()
     assert h.obs.kinds().count("reminder") == 2  # and again, one interval later
     assert h.obs.kinds().count("attention") == 1  # the original alert is not repeated
+
+
+async def test_the_reminder_interval_is_a_setting(session):
+    h = build(session, UNPROTECTED_REMINDER_MINUTES="15")
+    await h.open_and_fill()
+    await cancel_exits_in_the_app(h)
+    h.clock.advance(minutes=15, seconds=1)
+    await h.engine.tick()
+    (first,) = [e[1] for e in h.obs.events if e[0] == "reminder"]
+    assert "Still unprotected after 15 min." in first
 
 
 async def test_reminders_can_be_switched_off(session):
@@ -643,7 +655,7 @@ async def test_reminders_continue_through_the_retry_throttle_and_stop_when_prote
     await h.open_and_fill()
     assert h.obs.kinds().count("attention") == 1
 
-    h.clock.advance(minutes=16)  # the exit retry is throttled to 2 minutes, but the reminder is due
+    h.clock.advance(hours=24, minutes=1)  # the exit retry is throttled to 2 minutes, but the reminder is due
     await h.engine.tick()
     assert h.obs.kinds().count("reminder") == 1
 
@@ -651,7 +663,7 @@ async def test_reminders_continue_through_the_retry_throttle_and_stop_when_prote
     h.clock.advance(seconds=121)  # past the retry throttle
     await h.engine.tick()  # the next retry succeeds: protection is back
     assert h.obs.kinds().count("protected_again") == 1
-    h.clock.advance(minutes=30)
+    h.clock.advance(hours=48)
     await h.engine.tick()
     assert h.obs.kinds().count("reminder") == 1  # no more once protected
 
@@ -716,7 +728,16 @@ async def test_an_oco_cancelled_by_the_owner_is_flagged_not_silently_replaced(h)
     assert h.obs.kinds().count("attention") == 1  # said once, not every tick
 
 
+async def make_it_a_stop_limit(h) -> None:
+    """Turn the stop leg into a STOP_LOSS_LIMIT with its limit at 117.76, as placed before ADR-010."""
+    sl = await h.leg(OrderType.STOP_LOSS)
+    sl.order_type, sl.target_price = OrderType.STOP_LOSS_LIMIT, D("117.76")
+    await h.session.flush()
+    h.fake.orders[sl.binance_order_id].update(type="STOP_LOSS_LIMIT", price="117.76000000")
+
+
 async def trigger_the_stop(h, *, bid: str) -> tuple[Order, Order]:
+    await make_it_a_stop_limit(h)
     tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS_LIMIT)
     h.fake.tickers["SOLUSDT"] = (bid, str(D(bid) + D("0.01")))
     h.fake.trigger_stop(sl.binance_order_id)
@@ -736,7 +757,7 @@ async def test_a_stop_triggered_past_its_limit_is_flagged_and_not_chased(h):
     assert (await h.position()).status == PositionStatus.OPEN
     assert len(h.fake.called("create_oco_order")) == 1 and len(h.fake.called("create_order")) == 1  # no sale
 
-    h.clock.advance(minutes=16)
+    h.clock.advance(hours=24, minutes=1)
     await h.engine.tick()
     assert h.obs.kinds().count("reminder") == 1 and h.obs.kinds().count("attention") == 1
 
@@ -763,6 +784,37 @@ async def test_a_triggered_stop_that_fills_closes_and_relabels_the_take_profit(h
     assert pos.status == PositionStatus.CLOSED and pos.exit_reason == ExitReason.STOP_LOSS
     await h.session.refresh(tp)
     assert tp.cancel_reason == CancelReason.OCO_COUNTERPART_FILLED
+
+
+async def test_a_market_stop_that_triggers_fills_and_is_never_flagged(h):
+    await h.open_and_fill()
+    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS)
+    h.fake.tickers["SOLUSDT"] = ("110.00", "110.01")  # gapped far below the 118 trigger
+    h.fake.fill(sl.binance_order_id, price="110.00")  # a market sell takes the price there is
+    await h.engine.on_stream_event(h.event(sl, "FILLED"))
+
+    pos = await h.position()
+    assert pos.status == PositionStatus.CLOSED and pos.exit_reason == ExitReason.STOP_LOSS
+    assert pos.exit_price == D("110.00") and "attention" not in h.obs.kinds()
+    await h.session.refresh(tp)
+    assert tp.cancel_reason == CancelReason.OCO_COUNTERPART_FILLED
+
+
+async def test_a_stop_limit_refused_before_the_change_is_retried_as_a_market_stop(h):
+    h.fake.raise_on["create_oco_order"] = api_error(-1013, "Filter failure: NOTIONAL")
+    await h.open_and_fill()
+    sl = next(o for o in await h.orders(OrderSide.SELL) if o.order_type == OrderType.STOP_LOSS)
+    sl.order_type, sl.target_price = OrderType.STOP_LOSS_LIMIT, D("117.76")  # as refused before ADR-010
+    await h.session.flush()
+
+    h.fake.raise_on.clear()
+    h.clock.advance(seconds=121)
+    await h.engine.tick()
+
+    legs = await h.orders(OrderSide.SELL)
+    assert len(legs) == 2  # the refused rows are reused
+    assert {o.order_type for o in legs} == {OrderType.LIMIT_MAKER, OrderType.STOP_LOSS}
+    assert h.fake.called("create_oco_order")[-1]["belowType"] == "STOP_LOSS"
 
 
 # --- leftovers and fees -------------------------------------------------------------------

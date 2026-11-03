@@ -243,9 +243,10 @@ class FakeBinance:
         tp = order_dict(self._next_leg, kw["aboveClientOrderId"], side="SELL", type_="LIMIT_MAKER",
                         price=kw["abovePrice"], qty=kw["quantity"], list_id=self._next_list)
         self._next_leg += 1
-        sl = order_dict(self._next_leg, kw["belowClientOrderId"], side="SELL", type_="STOP_LOSS_LIMIT",
-                        price=kw["belowPrice"], stop_price=kw["belowStopPrice"], qty=kw["quantity"],
-                        list_id=self._next_list)
+        # A market stop has no limit price; Binance reports it as 0.
+        sl = order_dict(self._next_leg, kw["belowClientOrderId"], side="SELL", type_=kw["belowType"],
+                        price=kw.get("belowPrice", "0.00000000"), stop_price=kw["belowStopPrice"],
+                        qty=kw["quantity"], list_id=self._next_list)
         self.orders[tp["orderId"]], self.orders[sl["orderId"]] = tp, sl
         return {"orderListId": self._next_list, "listClientOrderId": kw["listClientOrderId"],
                 "orderReports": [dict(tp), dict(sl)]}

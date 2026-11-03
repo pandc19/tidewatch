@@ -36,6 +36,7 @@ from sqlalchemy.orm import selectinload
 from bot.config.precision import FilterViolation, SymbolFilters
 from bot.config.settings import Settings
 from bot.database.models import (
+    STOP_LOSS_TYPES,
     BotState,
     CancelReason,
     DailyPnl,
@@ -312,7 +313,7 @@ class TradingEngine:
         free = await self._exchange.free_balance(filters.quote_asset)
         quantity = size_entry(
             free, s.allocation_pct, price, filters,
-            stop_loss_pct=s.stop_loss_pct, stop_limit_offset_pct=s.stop_limit_offset_pct,
+            stop_loss_pct=s.stop_loss_pct,
         )
         if quantity is None:
             log.info("not opening %s: %s free %s cannot fund a protectable trade", signal.symbol, filters.quote_asset, free)
@@ -420,6 +421,7 @@ class TradingEngine:
             await self._close(position_id, filled.id)
             return
         if live:
+            # Only a stop-limit placed before ADR-010 can trigger and then wait; a market stop fills.
             stop = next((o for o in live if o.order_type == OrderType.STOP_LOSS_LIMIT), None)
             if stop is not None and not any(o.order_type == OrderType.LIMIT_MAKER for o in live):
                 # The take-profit is gone, so the stop triggered and now waits as a limit sell.
@@ -567,7 +569,6 @@ class TradingEngine:
             return
         take_profit = filters.round_price(entry * (1 + tp_pct))
         stop = filters.round_price(entry * (1 - sl_pct))
-        stop_limit = filters.round_price(stop * (1 - self._settings.stop_limit_offset_pct))
         planned_stop, rebased_stop = stop, None
 
         # Persist before sending. The pair refused last time is reused, so retrying never piles
@@ -579,13 +580,14 @@ class TradingEngine:
                 key=lambda o: o.placed_at,
             )
             tp_row = next((o for o in reversed(refused) if o.order_type == OrderType.LIMIT_MAKER), None)
-            sl_row = next((o for o in reversed(refused) if o.order_type == OrderType.STOP_LOSS_LIMIT), None)
+            sl_row = next((o for o in reversed(refused) if o.order_type in STOP_LOSS_TYPES), None)
             if tp_row is not None and sl_row is not None:
                 base_id = tp_row.client_order_id.removesuffix("-tp")
                 for row in (tp_row, sl_row):
                     row.status, row.cancel_detail, row.quantity = OrderStatus.NEW, None, quantity
                 tp_row.target_price = take_profit
-                sl_row.target_price, sl_row.stop_price = stop_limit, stop
+                sl_row.order_type = OrderType.STOP_LOSS  # a stop-limit refused before ADR-010 is retried as a market stop
+                sl_row.target_price, sl_row.stop_price = stop, stop
             else:
                 base_id = self._exchange.new_client_order_id(reserve=3)
                 tp_row = Order(
@@ -595,8 +597,8 @@ class TradingEngine:
                 )
                 sl_row = Order(
                     position_id=position_id, symbol=symbol, client_order_id=f"{base_id}-sl",
-                    side=OrderSide.SELL, order_type=OrderType.STOP_LOSS_LIMIT, status=OrderStatus.NEW,
-                    target_price=stop_limit, stop_price=stop, quantity=quantity,
+                    side=OrderSide.SELL, order_type=OrderType.STOP_LOSS, status=OrderStatus.NEW,
+                    target_price=stop, stop_price=stop, quantity=quantity,  # a market stop has no limit
                 )
                 session.add_all([tp_row, sl_row])
             await session.flush()
@@ -606,7 +608,7 @@ class TradingEngine:
         for attempt in (1, 2):
             try:
                 placed = await self._exchange.place_oco_sell(
-                    symbol, quantity, take_profit, stop, stop_limit, list_client_order_id=base_id
+                    symbol, quantity, take_profit, stop, list_client_order_id=base_id
                 )
                 break
             except OrderRejected as exc:
@@ -618,17 +620,16 @@ class TradingEngine:
                         # Above the target: rest the take-profit just above the market.
                         log.warning("%s: take-profit %s is below the market, moving it to %s", symbol, take_profit, floor)
                         take_profit = floor
-                        await self._update_exit_prices(tp_id, sl_id, take_profit, stop, stop_limit)
+                        await self._update_exit_prices(tp_id, sl_id, take_profit, stop)
                         continue
                     if stop >= ticker.bid:
                         # Below the stop: Binance refuses a stop behind the market, which would
                         # leave the coins unprotected. Put an emergency stop the usual distance
                         # below the CURRENT price instead; it bounds the loss and the owner is told.
                         stop = filters.round_price(ticker.bid * (1 - sl_pct))
-                        stop_limit = filters.round_price(stop * (1 - self._settings.stop_limit_offset_pct))
                         rebased_stop = (stop, ticker.bid)
                         log.warning("%s: price %s is past the stop %s, using an emergency stop at %s", symbol, ticker.bid, planned_stop, stop)
-                        await self._update_exit_prices(tp_id, sl_id, take_profit, stop, stop_limit)
+                        await self._update_exit_prices(tp_id, sl_id, take_profit, stop)
                         continue
                 await self._mark_exit_failed(tp_id, sl_id, position_id, str(exc))
                 return
@@ -644,7 +645,7 @@ class TradingEngine:
             tp_row, sl_row = await session.get(Order, tp_id), await session.get(Order, sl_id)
             tp_row.binance_order_id, tp_row.order_list_id = placed.take_profit.order_id, placed.order_list_id
             sl_row.binance_order_id, sl_row.order_list_id = placed.stop_loss.order_id, placed.order_list_id
-        log.info("exit placed: %s %s tp=%s stop=%s/%s", symbol, quantity, take_profit, stop, stop_limit)
+        log.info("exit placed: %s %s tp=%s stop=%s", symbol, quantity, take_profit, stop)
         if rebased_stop is not None:
             new_stop, market = rebased_stop
             await self._attention_once(
@@ -658,11 +659,11 @@ class TradingEngine:
         )
         await self._clear_unprotected(position_id)
 
-    async def _update_exit_prices(self, tp_id, sl_id, take_profit, stop, stop_limit) -> None:
+    async def _update_exit_prices(self, tp_id, sl_id, take_profit, stop) -> None:
         async with self._sessions() as session:
             tp_row, sl_row = await session.get(Order, tp_id), await session.get(Order, sl_id)
             tp_row.target_price = take_profit
-            sl_row.stop_price, sl_row.target_price = stop, stop_limit
+            sl_row.stop_price, sl_row.target_price = stop, stop
 
     async def _exit_quantity(self, held: Decimal, filters: SymbolFilters) -> Decimal:
         """How much to sell: the position, plus any crumb of the coin lying around.
@@ -904,9 +905,10 @@ class TradingEngine:
         if state is None or minutes == 0 or now - state.last_notice < timedelta(minutes=minutes):
             return
         state.last_notice = now
-        waited = int((now - state.since).total_seconds() // 60)
-        log.critical("STILL UNPROTECTED after %d min: %s", waited, state.message)
-        await self._observer.reminder(f"Still unprotected after {waited} min. {state.message}")
+        minutes_waited = int((now - state.since).total_seconds() // 60)
+        waited = f"{minutes_waited} min" if minutes_waited < 120 else f"{minutes_waited // 60} h"
+        log.critical("STILL UNPROTECTED after %s: %s", waited, state.message)
+        await self._observer.reminder(f"Still unprotected after {waited}. {state.message}")
 
     async def _clear_unprotected(self, position_id) -> None:
         if self._unprotected.pop(position_id, None) is not None:

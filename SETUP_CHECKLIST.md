@@ -44,7 +44,7 @@ Full steps with troubleshooting: [GETTING_STARTED.md, section 7](GETTING_STARTED
 - [x] Open your new bot, press **Start**, send it any message (a bot cannot message you first).
 - [x] Run `python -m bot.services.notifications --find-chat-id`, and put the id it prints in `.env` as `TELEGRAM_CHAT_ID`.
 - [x] Check: `python -m bot.services.notifications --test` (or `python -m bot.main --check-only`) should put a message on your phone.
-- What you will get: buy placed, protection placed, trade closed, kill-switch, "needs attention", reminders every 15 minutes while a position has no stop-loss (`UNPROTECTED_REMINDER_MINUTES`), and started/stopped. Every message starts with `[TESTNET]`, `[DRY RUN]` or `[LIVE]`.
+- What you will get: buy placed, protection placed, trade closed, kill-switch, "needs attention", a daily reminder while a position has no stop-loss (`UNPROTECTED_REMINDER_MINUTES`, 1440 by default), and started/stopped. Every message starts with `[TESTNET]`, `[DRY RUN]` or `[LIVE]`.
 - **Not verified:** how the trade alerts look on the phone (the `<pre>` tables); only the test message has been seen.
 
 ## 4. Decide the entry signal (a blocker for real money)
@@ -95,7 +95,7 @@ Full runbook, including how to choose a host and a free-tier comparison: [docs/d
 - [x] Telegram alerts verified on your phone (section 3): test message only; trade alerts still to be seen.
 - [ ] The server ran in dry-run (and/or on the testnet) for a few weeks without surprises, and you read the alerts it sent.
 - [ ] A real fee rate and balance appeared in the logs (section 5), and `--check-only` passes with no config warnings.
-- [ ] You understand what the bot does when things go wrong: it **never sells on its own**; if your exit orders are cancelled it alerts you and reminds you every 15 minutes; if the price falls through the stop it places an emergency stop below the current price; if you sell by hand it closes the position as `MANUAL`.
+- [ ] You understand what the bot does when things go wrong: it **never sells on its own**; if your exit orders are cancelled it alerts you and reminds you once a day; if the price falls through the stop it places an emergency stop below the current price; if you sell by hand it closes the position as `MANUAL`.
 - [ ] You know the **kill-switch has never fired on real losses** (only in tests) and the **emergency stop has never run on the real exchange**.
 - [ ] You start with an amount you can afford to lose. With about $16, `MAX_OPEN_POSITIONS=1` and `ALLOCATION_PCT=0.98` are the defaults.
 - [ ] You asked an accountant how your country wants these trades reported, and whether treating USDT as USD is acceptable.

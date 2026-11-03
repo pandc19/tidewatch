@@ -23,7 +23,14 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.database.models import CancelReason, Order, OrderSide, OrderStatus, OrderType
+from bot.database.models import (
+    STOP_LOSS_TYPES,
+    CancelReason,
+    Order,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+)
 from bot.services.binance_client import (
     ExchangeClient,
     ExchangeError,
@@ -190,7 +197,7 @@ async def _relabel_oco_cancellations(session: AsyncSession, order_list_id: int) 
             ):
                 leg.cancel_reason = CancelReason.OCO_COUNTERPART_FILLED
                 leg.cancel_detail = "the other leg of the OCO pair filled"
-    elif any(leg.order_type == OrderType.STOP_LOSS_LIMIT and leg.status in LIVE for leg in legs):
+    elif any(leg.order_type in STOP_LOSS_TYPES and leg.status in LIVE for leg in legs):
         for leg in legs:
             if (
                 leg.order_type == OrderType.LIMIT_MAKER
