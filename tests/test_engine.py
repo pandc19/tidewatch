@@ -729,7 +729,8 @@ async def test_a_stop_triggered_past_its_limit_is_flagged_and_not_chased(h):
     tp, _ = await trigger_the_stop(h, bid="110.00")  # gapped below the 117.76 limit
 
     (alert,) = [e[1] for e in h.obs.events if e[0] == "attention"]
-    assert "fell through your stop at 118.00" in alert and "117.76" in alert and "110.00" in alert
+    assert "fell through your stop at 118 and is now 110," in alert and "limit sell at 117.76," in alert
+    assert "You hold 0.129 SOL" in alert
     await h.session.refresh(tp)
     assert tp.cancel_reason == CancelReason.OTHER and "stop-loss leg of the OCO triggered" in tp.cancel_detail
     assert (await h.position()).status == PositionStatus.OPEN
