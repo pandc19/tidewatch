@@ -13,7 +13,12 @@ from bot.database.models import (
     PositionStatus,
 )
 from bot.services.binance_client import ExchangeClient
-from bot.services.reconciliation import reconcile, sync_order
+from bot.services.reconciliation import (
+    STOP_EXPIRED_DETAIL,
+    STOP_TRIGGERED_DETAIL,
+    reconcile,
+    sync_order,
+)
 from tests.fakes import FakeBinance, api_error, order_dict, trade_dict
 
 D = Decimal
@@ -217,6 +222,22 @@ async def test_a_cancelled_oco_pair_with_no_fill_stays_external(session):
         fake.orders[leg.binance_order_id] = order_dict(leg.binance_order_id, leg.client_order_id, status="CANCELED", list_id=55)
         await sync_order(session, ex, leg)
     assert all(leg.cancel_reason == CancelReason.EXTERNAL for leg in legs)
+
+
+async def test_a_stop_that_expires_after_triggering_is_not_labelled_external(session):
+    ex, fake = exchange()
+    pos = await make_position(session)
+    common = {"side": OrderSide.SELL, "order_list_id": 55, "quantity": D("0.129")}
+    tp = await make_order(session, pos, binance_id=2001, order_type=OrderType.LIMIT_MAKER, **common)
+    sl = await make_order(session, pos, binance_id=2002, order_type=OrderType.STOP_LOSS, **common)
+    fake.orders[2001] = order_dict(2001, tp.client_order_id, side="SELL", type_="LIMIT_MAKER", status="EXPIRED", list_id=55)
+    fake.orders[2002] = order_dict(2002, sl.client_order_id, side="SELL", type_="STOP_LOSS", status="NEW", list_id=55)
+    await sync_order(session, ex, tp)  # the stop still looks live: the take-profit is the triggered one
+    assert tp.cancel_detail == STOP_TRIGGERED_DETAIL
+
+    fake.orders[2002]["status"] = "EXPIRED"
+    await sync_order(session, ex, sl)
+    assert sl.cancel_reason == CancelReason.OTHER and sl.cancel_detail == STOP_EXPIRED_DETAIL
 
 
 # --- orphans / dry-run --------------------------------------------------------------------

@@ -9,7 +9,9 @@ The cancel reason is set by whoever cancels on purpose (timeout, kill-switch).
 An order found cancelled with no reason is labelled EXTERNAL, then relabelled
 OCO_COUNTERPART_FILLED if the other leg of its OCO pair filled. A take-profit leg that
 expired while its stop-loss leg is still open is labelled as a triggered stop: Binance expires
-the take-profit when the stop triggers, and the stop then waits as a limit sell.
+the take-profit when the stop triggers, and the stop then waits as a limit sell. If the stop
+itself then expires too (a market stop that found no buyers), it is labelled STOP_EXPIRED_DETAIL
+rather than EXTERNAL, so the engine does not mistake it for the owner cancelling.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ log = logging.getLogger(__name__)
 LIVE = (OrderStatus.NEW, OrderStatus.PARTIALLY_FILLED)
 CANCELLED = (OrderStatus.CANCELED, OrderStatus.EXPIRED)
 STOP_TRIGGERED_DETAIL = "expired by the exchange: the stop-loss leg of the OCO triggered"
+STOP_EXPIRED_DETAIL = "the stop-loss triggered but the exchange expired it before it sold everything"
 
 
 @dataclass(frozen=True)
@@ -206,6 +209,16 @@ async def _relabel_oco_cancellations(session: AsyncSession, order_list_id: int) 
             ):
                 leg.cancel_reason = CancelReason.OTHER
                 leg.cancel_detail = STOP_TRIGGERED_DETAIL
+    elif any(leg.order_type == OrderType.LIMIT_MAKER and leg.cancel_detail == STOP_TRIGGERED_DETAIL for leg in legs):
+        # The stop triggered (it expired the take-profit) and has now expired too, with no leg filled.
+        for leg in legs:
+            if (
+                leg.order_type in STOP_LOSS_TYPES
+                and leg.status == OrderStatus.EXPIRED
+                and leg.cancel_reason == CancelReason.EXTERNAL
+            ):
+                leg.cancel_reason = CancelReason.OTHER
+                leg.cancel_detail = STOP_EXPIRED_DETAIL
     else:
         return
     await session.flush()
