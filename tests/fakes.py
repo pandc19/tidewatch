@@ -185,6 +185,12 @@ class FakeBinance:
         o = self.orders[order_id]
         self._cancel_list(o["orderListId"], except_id=order_id, status="EXPIRED")
 
+    def expire_unsold(self, order_id: int, *, sold: str = "0") -> None:
+        """A triggered market stop finds no buyers: Binance expires it with `sold` filled (usually none)."""
+        o = self.orders[order_id]
+        o["status"] = "EXPIRED"
+        o["executedQty"] = sold
+
     def _cancel_list(self, list_id: int, *, status: str = "CANCELED", except_id: int | None = None) -> None:
         for oid, o in self.orders.items():
             if o["orderListId"] == list_id and oid != except_id and o["status"] in ("NEW", "PARTIALLY_FILLED"):

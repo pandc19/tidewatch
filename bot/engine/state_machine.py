@@ -56,7 +56,7 @@ from bot.services.binance_client import (
     ExchangeError,
     OrderRejected,
 )
-from bot.services.reconciliation import LIVE, reconcile, sync_order
+from bot.services.reconciliation import LIVE, STOP_EXPIRED_DETAIL, reconcile, sync_order
 from bot.services.risk_manager import KillSwitch, size_entry
 from bot.services.user_stream import OrderEvent
 
@@ -416,6 +416,8 @@ class TradingEngine:
             filled = next((o for o in sells if o.status == OrderStatus.FILLED), None)
             live = [o for o in sells if o.status in LIVE]
             all_rejected = bool(sells) and all(o.status == OrderStatus.REJECTED for o in sells)
+            lapsed = next((o for o in sells if o.cancel_detail == STOP_EXPIRED_DETAIL), None)
+            lapsed_info = (lapsed.stop_price, lapsed.filled_qty, lapsed.quantity) if lapsed else None
         if filled is not None:
             self._unprotected.pop(position_id, None)
             await self._close(position_id, filled.id)
@@ -435,6 +437,20 @@ class TradingEngine:
             return  # the owner sold it by hand: the position is now closed
         if not sells or all_rejected:
             await self._place_exit(position_id)  # never placed, or refused last time: try again
+        elif lapsed_info is not None:
+            # The stop triggered but expired unsold (no buyers): not the owner's doing, and the bot
+            # does not sell on its own, so say exactly what happened and what is still held.
+            trigger, sold, ordered = lapsed_info
+            asset = symbol.removesuffix(self._settings.quote_asset)
+            how_much = "none of it" if sold == 0 else f"{_n(sold)} of {_n(ordered)}"
+            await self._flag_unprotected(
+                position_id,
+                "stop-expired",
+                f"{symbol}: your stop-loss triggered at {_n(trigger)} but the exchange could not sell: it "
+                f"expired with {how_much} sold, probably because nobody was buying at that moment. "
+                f"You still hold {_n(held - sold)} {asset} with no stop-loss. The bot will not sell on its "
+                "own: sell it yourself, or leave it.",
+            )
         else:
             # Exits exist but none is live or filled: cancelled outside the bot. Do not fight a
             # deliberate manual cancel by re-placing it; tell the owner, and keep reminding them.

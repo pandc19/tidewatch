@@ -27,3 +27,4 @@ Options considered:
 - The replay tool already modelled the stop as a market-like sale (filling at the stop, or at the open after a gap), so the parameter study's numbers describe this behaviour better than the old one.
 - The bot still never sells except through the OCO it placed (the market stop is part of that OCO).
 - A Binance refusal of the new leg type would go through the existing refused-exit path: the position is flagged as unprotected and the exit retried every `EXIT_RETRY_SECONDS`.
+- A market stop can still fail to sell. Seen on the testnet 2026-11-04 15:41 (TRXUSDT): one market sell emptied the book from 0.3193 to 0.2975, the stop (trigger 0.3141) fired, and Binance expired it with nothing sold 0.3 s after it expired the take-profit. The bot now labels that stop `OTHER` ("triggered but expired") instead of `EXTERNAL`, and alerts with what was and was not sold. It still does not sell or re-place anything on its own.

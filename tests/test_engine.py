@@ -728,6 +728,25 @@ async def test_an_oco_cancelled_by_the_owner_is_flagged_not_silently_replaced(h)
     assert h.obs.kinds().count("attention") == 1  # said once, not every tick
 
 
+async def test_a_market_stop_that_expires_unsold_is_not_reported_as_a_manual_cancel(h):
+    await h.open_and_fill()
+    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS)
+
+    h.fake.trigger_stop(sl.binance_order_id)  # the take-profit expires first...
+    await h.engine.on_stream_event(h.event(tp, "EXPIRED"))
+    h.fake.expire_unsold(sl.binance_order_id)  # ...then the stop finds no buyers
+    await h.engine.on_stream_event(h.event(sl, "EXPIRED"))
+    await h.engine.tick()
+
+    (alert,) = [e[1] for e in h.obs.events if e[0] == "attention"]
+    assert "stop-loss triggered at" in alert and "expired with none of it sold" in alert
+    assert "outside the bot" not in alert and "You still hold 0.12987 SOL" in alert
+    await h.session.refresh(sl)
+    assert sl.cancel_reason == CancelReason.OTHER and "triggered but" in sl.cancel_detail
+    assert (await h.position()).status == PositionStatus.OPEN
+    assert len(h.fake.called("create_oco_order")) == 1 and len(h.fake.called("create_order")) == 1  # no sale
+
+
 async def make_it_a_stop_limit(h) -> None:
     """Turn the stop leg into a STOP_LOSS_LIMIT with its limit at 117.76, as placed before ADR-010."""
     sl = await h.leg(OrderType.STOP_LOSS)

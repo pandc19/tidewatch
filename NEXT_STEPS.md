@@ -39,6 +39,15 @@ Nothing in the code should be described as profitable.
 
 ---
 
+## A market stop that expires unsold (seen 2026-11-04)
+
+The TRXUSDT stop fired in a one-second crash and Binance expired it with nothing sold; the position stayed open and unprotected. The alert is now accurate (see the end of ADR-010). Still open:
+
+- **Decision for the owner:** should the bot place a new stop-loss by itself after this? It is not a sale, but it is a new automatic behaviour, so it needs its own ADR first. Today the owner sells by hand or waits.
+- **A stop that fills partway, then expires:** the sold part is neither booked nor subtracted from what the bot thinks it holds, so a later manual sale of the rest is flagged as a partial sale and the position never closes. Needs a live or faked case to design the accounting against.
+
+---
+
 ## Still unverified (testnet limits)
 
 Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OCO, owner cancel, entry timeout), and an owner cancelling the OCO and selling by hand (closed as `MANUAL` within a second, exact PnL). Again on 2026-11-03 on Coolify: the BNB stop-limit skipped by a gap was cancelled and 0.020 BNB sold at market through the API; the bot closed the position as `MANUAL` at 701.40 (−0.8081 USD, matching the fills) and the **kill-switch tripped on that real loss** (0.0081% of the account against the rehearsal's 0.005% limit), pausing entries for 24 hours. Not yet seen, and hard to force on a testnet:
