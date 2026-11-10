@@ -418,6 +418,7 @@ class TradingEngine:
             all_rejected = bool(sells) and all(o.status == OrderStatus.REJECTED for o in sells)
             lapsed = next((o for o in sells if o.cancel_detail == STOP_EXPIRED_DETAIL), None)
             lapsed_info = (lapsed.stop_price, lapsed.filled_qty, lapsed.quantity) if lapsed else None
+            lapsed_id = lapsed.id if lapsed else None
         if filled is not None:
             self._unprotected.pop(position_id, None)
             await self._close(position_id, filled.id)
@@ -441,6 +442,16 @@ class TradingEngine:
             # The stop triggered but expired unsold (no buyers): not the owner's doing, and the bot
             # does not sell on its own, so say exactly what happened and what is still held.
             trigger, sold, ordered = lapsed_info
+            if sold > 0 and await self._unsellable(symbol, held - sold):
+                # What the stop sold is a real, booked sale; what is left is below the exchange's
+                # minimum order, so nobody can sell it and watching it protects nothing.
+                log.warning(
+                    "%s: the stop sold %s of %s and %s is left, too small to sell. Closing the position.",
+                    symbol, sold, held, held - sold,
+                )
+                self._unprotected.pop(position_id, None)
+                await self._close(position_id, lapsed_id)
+                return
             asset = symbol.removesuffix(self._settings.quote_asset)
             how_much = "none of it" if sold == 0 else f"{_n(sold)} of {_n(ordered)}"
             await self._flag_unprotected(
@@ -461,6 +472,22 @@ class TradingEngine:
                 f"You still hold {_n(held)} {symbol.removesuffix(self._settings.quote_asset)} with no stop-loss.",
             )
         await self._remind_unprotected(position_id)
+
+    async def _unsellable(self, symbol: str, quantity: Decimal) -> bool:
+        """True if *quantity* can no longer be sold: under the lot size or the minimum order value.
+
+        If the price cannot be read the answer is False: the position stays open and flagged.
+        """
+        try:
+            filters = await self._exchange.symbol_filters(symbol)
+            sellable = filters.round_quantity(quantity)
+            if sellable < filters.min_qty:
+                return True
+            bid = (await self._exchange.book_ticker(symbol)).bid
+        except ExchangeError:
+            log.exception("could not check whether the rest of %s can be sold", symbol)
+            return False
+        return sellable * bid < filters.min_notional
 
     async def _check_triggered_stop(self, position_id, symbol, trigger, limit, quantity) -> None:
         """Flag a triggered stop whose limit sell is above the market: it cannot fill.

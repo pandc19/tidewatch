@@ -747,6 +747,39 @@ async def test_a_market_stop_that_expires_unsold_is_not_reported_as_a_manual_can
     assert len(h.fake.called("create_oco_order")) == 1 and len(h.fake.called("create_order")) == 1  # no sale
 
 
+async def expire_stop_after_selling(h, sold: str) -> Order:
+    tp, sl = await h.leg(OrderType.LIMIT_MAKER), await h.leg(OrderType.STOP_LOSS)
+    h.fake.trigger_stop(sl.binance_order_id)
+    await h.engine.on_stream_event(h.event(tp, "EXPIRED"))
+    h.fake.expire_unsold(sl.binance_order_id, sold=sold, price="110.00")
+    await h.engine.on_stream_event(h.event(sl, "EXPIRED"))
+    await h.engine.tick()
+    return sl
+
+
+async def test_a_stop_that_sold_most_of_the_position_closes_it_when_the_rest_is_too_small_to_sell(h):
+    await h.open_and_fill()  # holds 0.12987 SOL; the stop covers 0.129
+    await expire_stop_after_selling(h, sold="0.120")  # 0.00987 left: about 1 USDT, under the 5 USDT minimum
+
+    pos = await h.position()
+    assert pos.status == PositionStatus.CLOSED and pos.exit_reason == ExitReason.STOP_LOSS
+    assert pos.exit_price == D("110")
+    ledger = (await h.session.scalars(select(TaxLedger))).one()
+    assert ledger.amount_operated == D("0.120")  # only what was sold is booked; the dust is not a loss
+    assert ledger.net_profit_usd < 0
+    assert "attention" not in h.obs.kinds() and "trade_closed" in h.obs.kinds()
+    assert len(h.fake.called("create_order")) == 1  # the buy: nothing was sold or placed by the bot
+
+
+async def test_a_stop_that_sold_part_of_the_position_stays_open_when_the_rest_can_be_sold(h):
+    await h.open_and_fill()
+    await expire_stop_after_selling(h, sold="0.040")  # 0.08987 left: about 10 USDT, sellable
+
+    assert (await h.position()).status == PositionStatus.OPEN
+    (alert,) = [e[1] for e in h.obs.events if e[0] == "attention"]
+    assert "expired with 0.04 of 0.129 sold" in alert and "You still hold 0.08987 SOL" in alert
+
+
 async def make_it_a_stop_limit(h) -> None:
     """Turn the stop leg into a STOP_LOSS_LIMIT with its limit at 117.76, as placed before ADR-010."""
     sl = await h.leg(OrderType.STOP_LOSS)
