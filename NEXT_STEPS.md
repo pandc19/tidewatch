@@ -2,7 +2,7 @@
 
 Pending items only. When something is built or resolved, delete it from this file. What *you* must set up (keys, Telegram, database, server) is in [SETUP_CHECKLIST.md](SETUP_CHECKLIST.md).
 
-Last updated 2026-11-03, during phase 6: the bot runs on the Binance testnet on Coolify (since 2026-10-19) and is being monitored for a few days. Telegram delivery is verified; trade-alert layout is not yet seen.
+Last updated 2026-11-06, during phase 6: the bot runs on the Binance testnet on Coolify (since 2026-10-19) and is being monitored for a few days. Telegram delivery is verified; trade-alert layout is not yet seen.
 
 ---
 
@@ -41,16 +41,19 @@ Nothing in the code should be described as profitable.
 
 ## A market stop that expires unsold (seen 2026-11-04)
 
-The TRXUSDT stop fired in a one-second crash and Binance expired it with nothing sold; the position stayed open and unprotected. The alert is now accurate (see the end of ADR-010). Still open:
+The TRXUSDT stop fired in a one-second crash and Binance expired it with nothing sold; the position stayed open and unprotected. The alert is now accurate for new cases (see the end of ADR-010). Still open:
+
+- **A stop already stored as `EXTERNAL` keeps the old wording.** The TRX stop was labelled before #27, so its alerts and 24 h reminder still said "cancelled outside the bot". The relabel in `reconciliation.py` only runs on fresh cancellations. Not fixed: the TRX position was sold by hand on 2026-11-06 (0.1507 USD loss), so no open position is affected.
 
 - **Decision for the owner:** should the bot place a new stop-loss by itself after this? It is not a sale, but it is a new automatic behaviour, so it needs its own ADR first. Today the owner sells by hand or waits.
-- **A stop that fills partway, then expires:** the sold part is neither booked nor subtracted from what the bot thinks it holds, so a later manual sale of the rest is flagged as a partial sale and the position never closes. Needs a live or faked case to design the accounting against.
+- **A stop that fills partway, then expires, with a rest big enough to sell:** the position stays open and flagged, and the part the stop sold is still not subtracted from what the bot thinks it holds, so a later manual sale of the rest is flagged as a partial sale and the position never closes. (When the rest is too small to sell, the position now closes.) Needs a case with a sellable rest to design the accounting against.
+- **A depth filter at entry was measured and rejected (2026-11-09).** The testnet books were deeper than mainnet's within 0.5% of the bid (ETHUSDT 2.0M vs 6.1M USDT, TRXUSDT 7.8M vs 1.6M), so it would have passed both failed trades. The failures were a momentary sweep of the book, not a thin book at entry; see ADR-010.
 
 ---
 
 ## Still unverified (testnet limits)
 
-Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OCO, owner cancel, entry timeout), and an owner cancelling the OCO and selling by hand (closed as `MANUAL` within a second, exact PnL). Again on 2026-11-03 on Coolify: the BNB stop-limit skipped by a gap was cancelled and 0.020 BNB sold at market through the API; the bot closed the position as `MANUAL` at 701.40 (−0.8081 USD, matching the fills) and the **kill-switch tripped on that real loss** (0.0081% of the account against the rehearsal's 0.005% limit), pausing entries for 24 hours. Not yet seen, and hard to force on a testnet:
+Verified live on the testnet on 2026-10-06: the full engine run (entry, fill, OCO, owner cancel, entry timeout), and an owner cancelling the OCO and selling by hand (closed as `MANUAL` within a second, exact PnL). Again on 2026-11-03 on Coolify: the BNB stop-limit skipped by a gap was cancelled and 0.020 BNB sold at market through the API; the bot closed the position as `MANUAL` at 701.40 (−0.8081 USD, matching the fills) and the **kill-switch tripped on that real loss** (0.0081% of the account against the rehearsal's 0.005% limit), pausing entries for 24 hours. On 2026-11-06 the unprotected TRX was sold at market through the API (49.6 of 49.6503, one 0.1 lot step; the 0.0503 left is unsellable dust) and the bot closed it as `MANUAL` (−0.1507 USD, −0.95%). Not yet seen, and hard to force on a testnet:
 
 - **The market stop-loss** (ADR-010, 2026-11-03): `STOP_LOSS` as the OCO's lower leg is in Binance's docs and allowed for BNB, SOL and BTC in live `exchangeInfo`, but no such OCO has been placed yet. On the first testnet exit after the deploy, check that Binance accepts it (a refusal shows as an "unprotected" alert) and, when it triggers, that it fills at once and the take-profit ends `EXPIRED`. The BNB position opened 2026-10-27 keeps its old `STOP_LOSS_LIMIT` until it closes or you sell it.
 - **The re-based emergency stop** on the live exchange (needs a price that fell through the stop). Tested against a fake that raises Binance's refusal.
