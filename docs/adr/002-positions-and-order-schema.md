@@ -15,7 +15,7 @@ The original spec had `orders`, `tax_ledger` and `daily_pnl`. That cannot repres
 - OCO legs use order types `LIMIT_MAKER` (take-profit) and `STOP_LOSS_LIMIT`, the types Binance reports, instead of a single `OCO` value (*Update 2026-11-03:* the stop-loss leg is now `STOP_LOSS`, a market stop, ADR-010; `STOP_LOSS_LIMIT` remains for older rows).
 - `kill_switch_events`: why a trip happened; orders it cancelled reference it.
 - `bot_state`: a single row (CHECK `id = 1`) holding the pause, seeded by the migration.
-- `tax_ledger` gains `position_id` (unique) and `fees_usd`. `daily_pnl` stays a per-UTC-day summary; the kill-switch itself uses a rolling 24-hour sum of closed positions.
+- `tax_ledger` gains `position_id` and `fees_usd` (`position_id` was unique here; migration 0005 made the ledger one row per sale, with a unique `sell_order_id`, see ADR-010). `daily_pnl` stays a per-UTC-day summary; the kill-switch itself uses a rolling 24-hour sum of `tax_ledger` rows (it summed closed positions until migration 0005).
 - Enums are strings with CHECK constraints, not native PostgreSQL enums.
 
 ## Consequences

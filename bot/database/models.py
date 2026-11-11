@@ -200,19 +200,27 @@ class Order(Base):
 
 
 class TaxLedger(Base):
-    """One row per closed position. USDT is treated as USD."""
+    """One row per sale of a position's coins. USDT is treated as USD.
+
+    Usually that is one row, written when the position closes. A stop that sold part of the
+    position and expired (ADR-010) is booked the moment it expires, so a position can have more
+    than one row; `sell_order_id` ties each row to the order that made the sale, once.
+    """
 
     __tablename__ = "tax_ledger"
     __table_args__ = (
         Index("ix_tax_ledger_sell_timestamp", "sell_timestamp"),
         Index("ix_tax_ledger_symbol", "symbol"),
+        Index("ix_tax_ledger_position_id", "position_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid.uuid4, server_default=func.gen_random_uuid()
     )
-    position_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("positions.id", ondelete="RESTRICT"), unique=True
+    position_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("positions.id", ondelete="RESTRICT"))
+    # The sell that this row books. Null on rows written before this column existed.
+    sell_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("orders.id", ondelete="RESTRICT"), unique=True
     )
     symbol: Mapped[str] = mapped_column(String(20))
     amount_operated: Mapped[Decimal] = mapped_column(NUMERIC)

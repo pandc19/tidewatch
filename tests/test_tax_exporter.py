@@ -8,7 +8,16 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from bot.config.settings import get_settings
-from bot.database.models import ExitReason, Position, PositionStatus, TaxLedger
+from bot.database.models import (
+    ExitReason,
+    Order,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Position,
+    PositionStatus,
+    TaxLedger,
+)
 from bot.reports.tax_exporter import COLUMNS, default_path, export, main
 from tests.conftest import _skip_or_fail, _test_database_url
 
@@ -160,3 +169,26 @@ def test_the_command_itself_writes_the_file_and_creates_the_folder(tmp_path, cap
     assert code == 0
     assert out.read_text().splitlines() == [",".join(COLUMNS)]
     assert "wrote 0 trade(s)" in capsys.readouterr().err
+
+
+async def test_each_sale_of_a_position_carries_its_own_reason(session):
+    """A stop sold part (STOP_LOSS), then the owner sold the rest: two rows, two reasons."""
+    first = await trade(session, datetime(2026, 3, 2, 0, 11, tzinfo=UTC), reason=ExitReason.MANUAL)
+    stop = Order(
+        position_id=first.position_id, symbol="SOLUSDT", client_order_id="bot-x-sl", side=OrderSide.SELL,
+        order_type=OrderType.STOP_LOSS, status=OrderStatus.EXPIRED, target_price=D("0"), quantity=D("0.129"),
+    )
+    session.add(stop)
+    await session.flush()
+    first.sell_order_id = stop.id
+    session.add(TaxLedger(
+        position_id=first.position_id, symbol="SOLUSDT", amount_operated=D("0.05"), buy_price_usd=D("120.41"),
+        sell_price_usd=D("100"), total_buy_usd=D("6"), total_sell_usd=D("5"), net_profit_usd=D("-1"),
+        buy_timestamp=first.buy_timestamp, sell_timestamp=datetime(2026, 3, 5, 9, 0, tzinfo=UTC),
+    ))
+    await session.flush()
+
+    _, rows = await run(session)
+
+    reasons = [dict(zip(COLUMNS, line, strict=True))["exit_reason"] for line in rows[1:]]
+    assert reasons == ["STOP_LOSS", "MANUAL"]  # the position's own exit applies to the sale it made

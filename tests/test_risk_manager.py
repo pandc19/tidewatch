@@ -14,6 +14,7 @@ from bot.database.models import (
     KillSwitchEvent,
     Position,
     PositionStatus,
+    TaxLedger,
 )
 from bot.services.binance_client import ExchangeClient
 from bot.services.risk_manager import KillSwitch, config_problems, database_mismatch, spread_ok
@@ -108,9 +109,22 @@ class Harness:
         )
 
     async def closed_trade(self, pnl: str, hours_ago: float = 1) -> None:
-        self.session.add(Position(
+        sold_at = self.now - timedelta(hours=hours_ago)
+        pos = Position(
             symbol="SOLUSDT", status=PositionStatus.CLOSED, take_profit_pct=D("0.04"), stop_loss_pct=D("0.02"),
-            realized_pnl_usd=D(pnl), closed_at=self.now - timedelta(hours=hours_ago),
+            realized_pnl_usd=D(pnl), closed_at=sold_at,
+        )
+        self.session.add(pos)
+        await self.session.flush()
+        await self.sale(pos, pnl, hours_ago)
+
+    async def sale(self, pos: Position, pnl: str, hours_ago: float = 1) -> None:
+        """A tax-ledger row: what the kill-switch counts (one per sale, however the position ended)."""
+        sold_at = self.now - timedelta(hours=hours_ago)
+        self.session.add(TaxLedger(
+            position_id=pos.id, symbol=pos.symbol, amount_operated=D("1"), buy_price_usd=D("100"),
+            sell_price_usd=D("100"), total_buy_usd=D("100"), total_sell_usd=D("100") + D(pnl),
+            net_profit_usd=D(pnl), buy_timestamp=sold_at - timedelta(hours=1), sell_timestamp=sold_at,
         ))
         await self.session.flush()
 
@@ -242,3 +256,17 @@ def test_a_mismatch_stops_startup(market):
         cfg(BINANCE_TESTNET="false", DATABASE_URL=_db("tidewatch_testnet")), *market, free_quote=D("16")
     )
     assert any("testnet" in e for e in errors)
+
+
+async def test_a_loss_booked_by_a_stop_that_sold_part_of_a_still_open_position_counts(ks):
+    open_position = Position(
+        symbol="SOLUSDT", status=PositionStatus.OPEN, quantity=D("1"), entry_price=D("120"),
+        take_profit_pct=D("0.04"), stop_loss_pct=D("0.02"),
+    )
+    ks.session.add(open_position)
+    await ks.session.flush()
+    await ks.sale(open_position, "-60", hours_ago=1)  # the stop sold part; the rest is still held
+
+    event = await ks.switch.check()
+
+    assert event is not None and event.realized_loss_usd == D("60")
