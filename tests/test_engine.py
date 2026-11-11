@@ -691,9 +691,16 @@ async def test_closing_by_hand_ends_the_reminders(h):
 
 async def test_the_kill_switch_runs_each_tick_cancels_entries_and_pauses_trading(h):
     await h.engine.open_position(SIGNAL)  # a buy resting on the exchange
-    h.session.add(Position(
+    lost = Position(
         symbol="BTCUSDT", status=PositionStatus.CLOSED, take_profit_pct=D("0.04"), stop_loss_pct=D("0.02"),
         realized_pnl_usd=D("-0.60"), closed_at=h.clock.now - timedelta(hours=1),
+    )
+    h.session.add(lost)
+    await h.session.flush()
+    h.session.add(TaxLedger(  # a close always writes its ledger row; that is what the kill-switch adds up
+        position_id=lost.id, symbol="BTCUSDT", amount_operated=D("1"), buy_price_usd=D("100"),
+        sell_price_usd=D("99.4"), total_buy_usd=D("100"), total_sell_usd=D("99.4"), net_profit_usd=D("-0.60"),
+        buy_timestamp=h.clock.now - timedelta(hours=2), sell_timestamp=h.clock.now - timedelta(hours=1),
     ))
     await h.session.flush()
 
@@ -771,13 +778,51 @@ async def test_a_stop_that_sold_most_of_the_position_closes_it_when_the_rest_is_
     assert len(h.fake.called("create_order")) == 1  # the buy: nothing was sold or placed by the bot
 
 
-async def test_a_stop_that_sold_part_of_the_position_stays_open_when_the_rest_can_be_sold(h):
+async def test_a_stop_that_sold_part_of_the_position_is_booked_when_it_expires_and_stays_open(h):
     await h.open_and_fill()
-    await expire_stop_after_selling(h, sold="0.040")  # 0.08987 left: about 10 USDT, sellable
+    await expire_stop_after_selling(h, sold="0.040")  # sold at 110.00; 0.08987 SOL left, about 10 USDT: sellable
+    await h.engine.tick()  # and a later tick must not book it again
 
-    assert (await h.position()).status == PositionStatus.OPEN
+    pos = await h.position()
+    assert pos.status == PositionStatus.OPEN
+    row = (await h.session.scalars(select(TaxLedger))).one()
+    assert row.position_id == pos.id and row.amount_operated == D("0.040") and row.sell_price_usd == D("110")
+    assert row.net_profit_usd < 0 and row.sell_order_id is not None
+    day = await h.session.get(DailyPnl, row.sell_timestamp.astimezone(UTC).date())
+    assert day.realized_pnl_usd == row.net_profit_usd  # in the day's total now, not when the rest is sold
     (alert,) = [e[1] for e in h.obs.events if e[0] == "attention"]
     assert "expired with 0.04 of 0.129 sold" in alert and "You still hold 0.08987 SOL" in alert
+
+
+async def test_selling_the_rest_after_a_partial_stop_closes_the_position_with_a_second_row(h):
+    await h.open_and_fill()
+    await expire_stop_after_selling(h, sold="0.040")  # booked: 0.040 at 110.00
+
+    h.fake.manual_sell("0.089", "100.00")  # the owner sells the rest (a lot step short of 0.08987)
+    await h.engine.tick()
+
+    pos = await h.position()
+    assert pos.status == PositionStatus.CLOSED and pos.exit_reason == ExitReason.MANUAL
+    rows = list((await h.session.scalars(select(TaxLedger).order_by(TaxLedger.sell_timestamp, TaxLedger.id))).all())
+    assert sorted(r.amount_operated for r in rows) == [D("0.040"), D("0.089")]  # one row per sale
+    assert len({r.sell_order_id for r in rows}) == 2
+    assert pos.realized_pnl_usd == sum(r.net_profit_usd for r in rows) < 0  # the trade's whole result
+    assert abs(pos.exit_price - (D("0.040") * D("110") + D("0.089") * D("100")) / D("0.129")) < D("1e-12")
+    day = await h.session.get(DailyPnl, rows[0].sell_timestamp.astimezone(UTC).date())
+    assert day.realized_pnl_usd == pos.realized_pnl_usd  # every sale counted exactly once
+    assert "trade_closed" in h.obs.kinds()
+
+
+async def test_selling_only_part_of_the_rest_after_a_partial_stop_is_still_flagged_as_partial(h):
+    await h.open_and_fill()
+    await expire_stop_after_selling(h, sold="0.040")
+
+    h.fake.manual_sell("0.030", "100.00")  # 0.05987 still unsold
+    await h.engine.tick()
+
+    assert (await h.position()).status == PositionStatus.OPEN
+    alerts = [e[1] for e in h.obs.events if e[0] == "attention"]
+    assert any("you sold 0.03 of the 0.08987 the bot holds" in a for a in alerts)
 
 
 async def make_it_a_stop_limit(h) -> None:

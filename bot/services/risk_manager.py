@@ -9,7 +9,7 @@ from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,7 @@ from bot.database.models import (
     KillSwitchEvent,
     Position,
     PositionStatus,
+    TaxLedger,
 )
 from bot.services.binance_client import ExchangeClient
 
@@ -184,16 +185,15 @@ class KillSwitch:
             window_start = now - self.WINDOW
             if last is not None:
                 window_start = max(window_start, last.triggered_at)
-            closed = (
-                await session.scalars(
-                    select(Position).where(
-                        Position.status == PositionStatus.CLOSED,
-                        Position.closed_at >= window_start,
-                        Position.closed_at <= now,
+            # Every sale booked in the window, however its position ended (or has not yet): a
+            # stop that sold part of a position counts the moment it sells.
+            net = (
+                await session.scalar(
+                    select(func.coalesce(func.sum(TaxLedger.net_profit_usd), 0)).where(
+                        TaxLedger.sell_timestamp >= window_start, TaxLedger.sell_timestamp <= now
                     )
                 )
-            ).all()
-            net = sum((p.realized_pnl_usd or Decimal(0) for p in closed), Decimal(0))
+            ) or Decimal(0)
             if net >= 0:
                 return None
             held = (

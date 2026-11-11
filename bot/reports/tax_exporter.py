@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.config.precision import format_decimal
 from bot.config.settings import get_settings
 from bot.database.connection import Database
-from bot.database.models import Position, TaxLedger
+from bot.database.models import STOP_LOSS_TYPES, Order, OrderType, Position, TaxLedger
 from bot.reports.periods import parse_period
 
 COLUMNS = [
@@ -90,11 +90,22 @@ def _row(entry: TaxLedger, exit_reason: str | None, tz: ZoneInfo) -> list[str]:
     ]
 
 
+def _reason(position_reason, order_type: OrderType | None) -> str | None:
+    """Why this sale happened. A stop or take-profit that sold says so even when the position's own
+    exit was another sale (a stop sold part, the owner sold the rest) or has not happened yet."""
+    if order_type in STOP_LOSS_TYPES:
+        return "STOP_LOSS"
+    if order_type == OrderType.LIMIT_MAKER:
+        return "TAKE_PROFIT"
+    return position_reason.value if position_reason else None
+
+
 async def export(session: AsyncSession, out: TextIO, year: int | None = None, tz: tzinfo = UTC) -> Summary:
     """Write the ledger (optionally one calendar year of sales, as days in `tz`) as CSV to `out`."""
     query = (
-        select(TaxLedger, Position.exit_reason)
+        select(TaxLedger, Position.exit_reason, Order.order_type)
         .join(Position, Position.id == TaxLedger.position_id)
+        .outerjoin(Order, Order.id == TaxLedger.sell_order_id)
         .order_by(TaxLedger.sell_timestamp, TaxLedger.id)
     )
     if year is not None:
@@ -103,8 +114,8 @@ async def export(session: AsyncSession, out: TextIO, year: int | None = None, tz
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(COLUMNS)
     count, net, fees = 0, Decimal(0), Decimal(0)
-    for entry, reason in (await session.execute(query)).all():
-        writer.writerow(_row(entry, reason.value if reason else None, tz))
+    for entry, position_reason, order_type in (await session.execute(query)).all():
+        writer.writerow(_row(entry, _reason(position_reason, order_type), tz))
         count, net, fees = count + 1, net + entry.net_profit_usd, fees + entry.fees_usd
     return Summary(count, net, fees)
 

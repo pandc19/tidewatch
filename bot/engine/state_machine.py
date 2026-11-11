@@ -442,7 +442,10 @@ class TradingEngine:
             # The stop triggered but expired unsold (no buyers): not the owner's doing, and the bot
             # does not sell on its own, so say exactly what happened and what is still held.
             trigger, sold, ordered = lapsed_info
-            if sold > 0 and await self._unsellable(symbol, held - sold):
+            dust = sold > 0 and await self._unsellable(symbol, held - sold)
+            if sold > 0 and not dust:
+                await self._book_partial_sale(position_id, lapsed_id)  # a real sale: on the books now
+            if dust:
                 # What the stop sold is a real, booked sale; what is left is below the exchange's
                 # minimum order, so nobody can sell it and watching it protects nothing.
                 log.warning(
@@ -527,6 +530,9 @@ class TradingEngine:
             symbol, held = position.symbol, position.quantity
             since = position.opened_at or position.created_at
             ours = {o.binance_order_id for o in position.orders if o.binance_order_id}
+            # A stop that sold part of it and expired: that part is already sold, not held.
+            earlier = [o.id for o in position.orders if o.cancel_detail == STOP_EXPIRED_DETAIL and o.filled_qty > 0]
+            held -= sum((o.filled_qty for o in position.orders if o.id in earlier), Decimal(0))
         try:
             filters = await self._exchange.symbol_filters(symbol)
             trades = await self._exchange.recent_trades(symbol, since)
@@ -740,62 +746,42 @@ class TradingEngine:
     # ------------------------------------------------------------------------------ close
 
     async def _close(self, position_id, sell_id) -> None:
+        """Book the closing sale, close the position and tell the owner.
+
+        If a stop already sold part of the position and was booked on its own
+        (`_book_partial_sale`), this sale is the last row and the position's result is the sum.
+        """
         async with self._sessions() as session:
             position = await self._load(session, position_id)
             if position.status != PositionStatus.OPEN:
                 return
             buy, sell = self._buy_order(position), await session.get(Order, sell_id)
-            symbol = position.symbol
+            symbol, opened_at = position.symbol, position.opened_at
             others = [o.id for o in position.orders if o.side == OrderSide.SELL and o.id != sell_id and o.status in LIVE]
 
-        filters = await self._exchange.symbol_filters(symbol)
-        buy_fee = await self._fee_value(buy, filters)
-        sell_fee = await self._fee_value(sell, filters)
-        now = self._clock()
-        result = compute_trade_result(
-            symbol=symbol,
-            buy_qty=buy.filled_qty,
-            buy_price=buy.avg_fill_price,
-            buy_coin_fee=(buy.commission or Decimal(0)) if buy.commission_asset == filters.base_asset else Decimal(0),
-            sell_qty=sell.filled_qty,
-            sell_price=sell.avg_fill_price,
-            buy_fee_value=buy_fee,
-            sell_fee_value=sell_fee,
-            buy_time=buy.filled_at or position.opened_at or now,
-            sell_time=sell.filled_at or now,
-        )
-
+        result = await self._trade_result(buy, sell, opened_at)
         async with self._sessions() as session:
             position = await self._load(session, position_id)
             if position.status != PositionStatus.OPEN:
                 return
+            earlier = (
+                await session.scalars(
+                    select(TaxLedger).where(TaxLedger.position_id == position_id, TaxLedger.sell_order_id != sell_id)
+                )
+            ).all()
             transition(position, PositionStatus.CLOSED)
-            position.exit_price = result.sell_price
+            total_sold = result.amount_operated + sum((e.amount_operated for e in earlier), Decimal(0))
+            total_sell = result.total_sell + sum((e.total_sell_usd for e in earlier), Decimal(0))
+            position.exit_price = total_sell / total_sold if earlier else result.sell_price  # weighted over every sale
             if sell.client_order_id.startswith(MANUAL_PREFIX):
                 position.exit_reason = ExitReason.MANUAL
             elif sell.order_type == OrderType.LIMIT_MAKER:
                 position.exit_reason = ExitReason.TAKE_PROFIT
             else:
                 position.exit_reason = ExitReason.STOP_LOSS
-            position.realized_pnl_usd = result.net_profit
+            position.realized_pnl_usd = result.net_profit + sum((e.net_profit_usd for e in earlier), Decimal(0))
             position.closed_at = result.sell_time
-            session.add(
-                TaxLedger(
-                    position_id=position_id, symbol=symbol,
-                    amount_operated=result.amount_operated,
-                    buy_price_usd=result.buy_price, sell_price_usd=result.sell_price,
-                    total_buy_usd=result.total_buy, total_sell_usd=result.total_sell,
-                    buy_fee_usd=result.buy_fee_usd, sell_fee_usd=result.sell_fee_usd,
-                    fees_usd=result.fees_usd, net_profit_usd=result.net_profit,
-                    buy_timestamp=result.buy_time, sell_timestamp=result.sell_time,
-                )
-            )
-            day = result.sell_time.astimezone(UTC).date()
-            pnl = await session.get(DailyPnl, day)
-            if pnl is None:
-                pnl = DailyPnl(date=day, realized_pnl_usd=Decimal(0), kill_switch_triggered=False)
-                session.add(pnl)
-            pnl.realized_pnl_usd += result.net_profit
+            await self._book_sale(session, position_id, sell_id, result)
 
         log.info("trade closed: %s %s net %s (%.2f%%)", symbol, position.exit_reason.value,
                  result.net_profit, result.return_pct * 100)
@@ -805,6 +791,64 @@ class TradingEngine:
                 async with self._sessions() as session:
                     await sync_order(session, self._exchange, await session.get(Order, order_id))
         await self._observer.trade_closed(await self._get_position(position_id), result)
+
+    async def _book_partial_sale(self, position_id, sell_id) -> None:
+        """Book what a stop sold before it expired, once, while the position stays open.
+
+        The loss is real the moment the stop sells, so the ledger, the daily total and the
+        kill-switch see it then, not when (or if) the owner sells the rest.
+        """
+        async with self._sessions() as session:
+            if await session.scalar(select(TaxLedger.id).where(TaxLedger.sell_order_id == sell_id)):
+                return
+            position = await self._load(session, position_id)
+            if position.status != PositionStatus.OPEN:
+                return
+            buy, sell, opened_at = self._buy_order(position), await session.get(Order, sell_id), position.opened_at
+        result = await self._trade_result(buy, sell, opened_at)
+        async with self._sessions() as session:
+            if await session.scalar(select(TaxLedger.id).where(TaxLedger.sell_order_id == sell_id)):
+                return
+            await self._book_sale(session, position_id, sell_id, result)
+        log.warning("%s: booked the partial stop sale (%s sold, net %s)", result.symbol,
+                    result.amount_operated, result.net_profit)
+
+    async def _trade_result(self, buy: Order, sell: Order, opened_at: datetime | None) -> TradeResult:
+        filters = await self._exchange.symbol_filters(buy.symbol)
+        now = self._clock()
+        return compute_trade_result(
+            symbol=buy.symbol,
+            buy_qty=buy.filled_qty,
+            buy_price=buy.avg_fill_price,
+            buy_coin_fee=(buy.commission or Decimal(0)) if buy.commission_asset == filters.base_asset else Decimal(0),
+            sell_qty=sell.filled_qty,
+            sell_price=sell.avg_fill_price,
+            buy_fee_value=await self._fee_value(buy, filters),
+            sell_fee_value=await self._fee_value(sell, filters),
+            buy_time=buy.filled_at or opened_at or now,
+            sell_time=sell.filled_at or now,
+        )
+
+    @staticmethod
+    async def _book_sale(session, position_id, sell_id, result: TradeResult) -> None:
+        """One tax-ledger row for one sale, and its share of that UTC day's total."""
+        session.add(
+            TaxLedger(
+                position_id=position_id, sell_order_id=sell_id, symbol=result.symbol,
+                amount_operated=result.amount_operated,
+                buy_price_usd=result.buy_price, sell_price_usd=result.sell_price,
+                total_buy_usd=result.total_buy, total_sell_usd=result.total_sell,
+                buy_fee_usd=result.buy_fee_usd, sell_fee_usd=result.sell_fee_usd,
+                fees_usd=result.fees_usd, net_profit_usd=result.net_profit,
+                buy_timestamp=result.buy_time, sell_timestamp=result.sell_time,
+            )
+        )
+        day = result.sell_time.astimezone(UTC).date()
+        pnl = await session.get(DailyPnl, day)
+        if pnl is None:
+            pnl = DailyPnl(date=day, realized_pnl_usd=Decimal(0), kill_switch_triggered=False)
+            session.add(pnl)
+        pnl.realized_pnl_usd += result.net_profit
 
     async def _fee_value(self, order: Order, filters: SymbolFilters) -> Decimal:
         asset_price = None

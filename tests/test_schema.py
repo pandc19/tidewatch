@@ -17,6 +17,7 @@ from bot.database.models import (
     OrderType,
     Position,
     PositionStatus,
+    TaxLedger,
 )
 
 D = Decimal
@@ -159,3 +160,25 @@ async def test_numbers_round_trip_as_exact_decimals(session):
     assert o.target_price == D("0.00001234")
     assert o.quantity == D("26.9")
     assert isinstance(o.target_price, Decimal)
+
+
+def ledger_row(pos: Position, **kw) -> TaxLedger:
+    defaults = {
+        "position_id": pos.id, "symbol": pos.symbol, "amount_operated": D("1"), "buy_price_usd": D("100"),
+        "sell_price_usd": D("100"), "total_buy_usd": D("100"), "total_sell_usd": D("100"),
+        "net_profit_usd": D("0"), "buy_timestamp": datetime.now(UTC), "sell_timestamp": datetime.now(UTC),
+    }
+    return TaxLedger(**{**defaults, **kw})
+
+
+async def test_a_position_can_have_a_ledger_row_per_sale_but_a_sale_is_booked_once(session):
+    pos = position(status=PositionStatus.OPEN)
+    sell_a, sell_b = order(pos, side=OrderSide.SELL), order(pos, side=OrderSide.SELL)
+    session.add_all([pos, sell_a, sell_b])
+    await session.flush()
+    session.add_all([ledger_row(pos, sell_order_id=sell_a.id), ledger_row(pos, sell_order_id=sell_b.id)])
+    await session.flush()  # two sales, one position: allowed
+
+    session.add(ledger_row(pos, sell_order_id=sell_a.id))
+    with pytest.raises(IntegrityError, match="uq_tax_ledger_sell_order_id"):
+        await session.flush()
